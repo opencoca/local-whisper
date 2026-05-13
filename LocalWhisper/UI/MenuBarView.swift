@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 struct MenuBarView: View {
     @EnvironmentObject var appState: AppState
@@ -225,23 +227,58 @@ struct MenuBarView: View {
     
     // MARK: - Actions Section
     private var actionsSection: some View {
-        HStack {
-            Button("Settings...") {
-                // Post notification to open settings
-                NotificationCenter.default.post(name: NSNotification.Name("ShowSettings"), object: nil)
+        VStack(spacing: 8) {
+            // File transcription — opens NSOpenPanel for audio files.
+            // The same code path is hit by drag-drop on the menu-bar icon
+            // (wired in AppDelegate), so both UIs share one coordinator entry.
+            Button(action: pickFileToTranscribe) {
+                HStack {
+                    Image(systemName: "waveform.badge.plus")
+                    Text("Transcribe File…")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
             .foregroundColor(.accentColor)
-            
-            Spacer()
-            
-            Button("Quit") {
-                NSApplication.shared.terminate(nil)
+            .disabled(!appState.isModelLoaded)
+            .help(appState.isModelLoaded
+                  ? "Pick an audio file (.wav, .mp3, .m4a, .flac, .aiff, .caf)"
+                  : "Waiting for the model to load…")
+
+            HStack {
+                Button("Settings...") {
+                    // Post notification to open settings
+                    NotificationCenter.default.post(name: NSNotification.Name("ShowSettings"), object: nil)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.accentColor)
+
+                Spacer()
+
+                Button("Quit") {
+                    NSApplication.shared.terminate(nil)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
             }
-            .buttonStyle(.plain)
-            .foregroundColor(.secondary)
         }
         .font(.caption)
+    }
+
+    /// Open an NSOpenPanel filtered to audio files. On confirm, hand the
+    /// URL to the coordinator's file-transcription entry point.
+    private func pickFileToTranscribe() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose an audio file to transcribe"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [.audio]
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { @MainActor in
+            await appState.coordinator.transcribeFile(url: url)
+        }
     }
 }
 

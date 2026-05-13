@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Combine
+import UniformTypeIdentifiers
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -28,13 +29,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupMenuBar() {
         // Create status item with variable length to fit icon + dot
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        
+
         if let button = statusItem.button {
             button.image = createStatusIcon(dotColor: .yellow) // Yellow = loading
             button.action = #selector(togglePopover)
             button.target = self
+
+            // Overlay a transparent drop view so audio files can be dragged
+            // onto the menu-bar icon. The view's hitTest returns nil so
+            // mouse clicks still reach the button (popover toggle).
+            let dropView = StatusItemDropView(frame: button.bounds)
+            dropView.autoresizingMask = [.width, .height]
+            dropView.onDrop = { [weak self] url in
+                Task { @MainActor in
+                    await AppState.shared.coordinator.transcribeFile(url: url)
+                    self?.showPopoverFromDrop()
+                }
+            }
+            button.addSubview(dropView)
         }
-        
+
         // Create popover with SwiftUI view
         popover = NSPopover()
         popover.contentSize = NSSize(width: 320, height: 420)
@@ -138,6 +152,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return image
     }
     
+    /// After a drag-drop transcription kicks off, pop the menu open so the
+    /// user sees the in-progress state and (shortly) the result.
+    private func showPopoverFromDrop() {
+        guard let button = statusItem.button, !popover.isShown else { return }
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     @objc private func togglePopover() {
         if let button = statusItem.button {
             if popover.isShown {
@@ -250,5 +272,50 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationWillTerminate(_ notification: Notification) {
         hotkeyManager.stop()
+    }
+}
+
+/// Transparent overlay on top of the menu-bar status-item button that
+/// accepts dragged audio files. `hitTest` returns nil so mouse clicks
+/// still reach the underlying button (and toggle the popover).
+final class StatusItemDropView: NSView {
+    /// Called on a successful drop with the dropped file's URL.
+    var onDrop: ((URL) -> Void)?
+
+    /// Conservative allow-list. AVFoundation can decode more, but these
+    /// are the common containers Whisper users actually feed in.
+    private static let audioExtensions: Set<String> = [
+        "wav", "mp3", "m4a", "mp4", "aac", "flac", "aiff", "aif", "caf", "ogg", "opus"
+    ]
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    // Pass clicks through to the status-bar button underneath.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        return firstAudioURL(in: sender) != nil ? .copy : []
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let url = firstAudioURL(in: sender) else { return false }
+        onDrop?(url)
+        return true
+    }
+
+    /// Pull the first file URL with an audio extension out of the pasteboard.
+    private func firstAudioURL(in info: NSDraggingInfo) -> URL? {
+        guard let items = info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] else {
+            return nil
+        }
+        return items.first { Self.audioExtensions.contains($0.pathExtension.lowercased()) }
     }
 }

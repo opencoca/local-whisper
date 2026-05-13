@@ -1,0 +1,212 @@
+{
+  "edges": [],
+  "nodes": [
+    {
+      "color": "4",
+      "height": 250,
+      "id": "col-backlog",
+      "label": "Backlog",
+      "type": "group",
+      "width": 300,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "children": [
+        {
+          "checked": false,
+          "line_num": 53,
+          "tags": [],
+          "text": "Investigate Apple Developer ID signing for the `.dmg`"
+        },
+        {
+          "checked": false,
+          "line_num": 54,
+          "tags": [],
+          "text": "Notarize releases so users no longer need the right-click \"Open\" workaround called out in the README"
+        }
+      ],
+      "file_path": "TODO.md",
+      "height": 80,
+      "id": "264b1dabe954b959",
+      "line_num": 52,
+      "source": "todo_md",
+      "tags": [],
+      "text": "**Notarization & signed releases: First-launch friction**\n- [ ] Investigate Apple Developer ID signing for the `.dmg`\n- [ ] Notarize releases so users no longer need the right-click \"Open\" workaround called out in the README\n\n`TODO.md:L52`",
+      "type": "text",
+      "width": 280,
+      "x": 10,
+      "y": 60
+    },
+    {
+      "children": [
+        {
+          "checked": false,
+          "line_num": 57,
+          "tags": [],
+          "text": "Surface download progress more clearly in the menu bar UI"
+        },
+        {
+          "checked": false,
+          "line_num": 58,
+          "tags": [],
+          "text": "Handle proxy / offline cases beyond the current `useBackgroundDownloadSession: false` workaround"
+        }
+      ],
+      "file_path": "TODO.md",
+      "height": 80,
+      "id": "8b4d680c096777fd",
+      "line_num": 56,
+      "source": "todo_md",
+      "tags": [],
+      "text": "**Model management UX: First-use model download**\n- [ ] Surface download progress more clearly in the menu bar UI\n- [ ] Handle proxy / offline cases beyond the current `useBackgroundDownloadSession: false` workaround\n\n`TODO.md:L56`",
+      "type": "text",
+      "width": 280,
+      "x": 10,
+      "y": 150
+    },
+    {
+      "height": 250,
+      "id": "col-todo",
+      "label": "TODO",
+      "type": "group",
+      "width": 300,
+      "x": 350,
+      "y": 0
+    },
+    {
+      "children": [
+        {
+          "checked": true,
+          "line_num": 31,
+          "tags": [],
+          "text": "Create `.todoscope-exclude.csv` with Swift/Xcode defaults"
+        },
+        {
+          "checked": true,
+          "line_num": 32,
+          "tags": [],
+          "text": "Create `TODO.md` with convention header and column structure"
+        },
+        {
+          "checked": false,
+          "line_num": 33,
+          "tags": [],
+          "text": "Run the TodoScope scanner against this repo and verify the kanban board reflects reality"
+        },
+        {
+          "checked": false,
+          "line_num": 34,
+          "tags": [],
+          "text": "Adjust column aliases or exclude paths if the board doesn't match expectations"
+        },
+        {
+          "checked": false,
+          "line_num": 35,
+          "tags": [],
+          "text": "Migrate any existing inline `// TODO` / `// FIXME` / `// BUG` comments to the canonical `TODO:` / `FIXME:` / `BUG:` form so the scanner picks them up"
+        }
+      ],
+      "file_path": "TODO.md",
+      "height": 80,
+      "id": "4e0d190800d128a9",
+      "line_num": 30,
+      "source": "todo_md",
+      "tags": [],
+      "text": "**TodoScope bootstrap: Get the repo into TodoScope conventions**\n- [x] Create `.todoscope-exclude.csv` with Swift/Xcode defaults\n- [x] Create `TODO.md` with convention header and column structure\n- [ ] Run the TodoScope scanner against this repo and verify the kanban board reflects reality\n- [ ] Adjust column aliases or exclude paths if the board doesn't match expectations\n- [ ] Migrate any existing inline `// TODO` / `// FIXME` / `// BUG` comments to the canonical `TODO:` / `FIXME:` / `BUG:` form so the scanner picks them up\n\n`TODO.md:L30`",
+      "type": "text",
+      "width": 280,
+      "x": 360,
+      "y": 60
+    },
+    {
+      "children": [
+        {
+          "checked": false,
+          "line_num": 40,
+          "tags": [],
+          "text": "Decide what surface area is worth testing (audio capture format conversion, hotkey parsing, settings persistence)"
+        },
+        {
+          "checked": false,
+          "line_num": 41,
+          "tags": [],
+          "text": "Add a `Tests/` target to `Package.swift` and a baseline smoke test"
+        },
+        {
+          "checked": false,
+          "line_num": 42,
+          "tags": [],
+          "text": "Wire tests into CI alongside `swift build -c release`"
+        }
+      ],
+      "file_path": "TODO.md",
+      "height": 80,
+      "id": "14493127b3a151bf",
+      "line_num": 39,
+      "source": "todo_md",
+      "tags": [],
+      "text": "**Test coverage: There are currently no tests**\n- [ ] Decide what surface area is worth testing (audio capture format conversion, hotkey parsing, settings persistence)\n- [ ] Add a `Tests/` target to `Package.swift` and a baseline smoke test\n- [ ] Wire tests into CI alongside `swift build -c release`\n\n`TODO.md:L39`",
+      "type": "text",
+      "width": 280,
+      "x": 360,
+      "y": 150
+    },
+    {
+      "color": "5",
+      "height": 200,
+      "id": "col-in_progress",
+      "label": "In Progress",
+      "type": "group",
+      "width": 300,
+      "x": 700,
+      "y": 0
+    },
+    {
+      "color": "1",
+      "height": 200,
+      "id": "col-bugs",
+      "label": "Bugs",
+      "type": "group",
+      "width": 300,
+      "x": 1050,
+      "y": 0
+    },
+    {
+      "color": "6",
+      "height": 250,
+      "id": "col-done",
+      "label": "Done",
+      "type": "group",
+      "width": 300,
+      "x": 1400,
+      "y": 0
+    },
+    {
+      "file_path": "TODO.md",
+      "height": 80,
+      "id": "46b5051a48ec8f5c",
+      "line_num": 67,
+      "source": "todo_md",
+      "tags": [],
+      "text": "**Custom vocabulary via WhisperKit `promptTokens` \u2014 token-level hints rather than instruction prompts (commit `0fd5875`)**\n`TODO.md:L67`",
+      "type": "text",
+      "width": 280,
+      "x": 1410,
+      "y": 60
+    },
+    {
+      "file_path": "TODO.md",
+      "height": 80,
+      "id": "10e20cc42c2b37d3",
+      "line_num": 68,
+      "source": "todo_md",
+      "tags": [],
+      "text": "**App simplification refactor for reliability (commit `c1d6e5b`)**\n`TODO.md:L68`",
+      "type": "text",
+      "width": 280,
+      "x": 1410,
+      "y": 150
+    }
+  ]
+}

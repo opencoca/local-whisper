@@ -167,6 +167,94 @@ final class TranscriptionCoordinator: ObservableObject {
         }
     }
     
+    /// Transcribe an audio file from disk.
+    /// Parallel to the hotkey flow but skips recording (uses `AudioFileLoader`
+    /// instead of `AudioCaptureService`) and skips auto-paste (no focused-app
+    /// intent for batch file work). Writes `<url>.txt` next to the source,
+    /// copies the text to the clipboard, and updates `lastTranscription` so
+    /// the popover shows it.
+    func transcribeFile(url: URL) async {
+        logger.info("transcribeFile called for \(url.lastPathComponent)")
+
+        guard let appState = appState,
+              let transcriptionService = transcriptionService,
+              let textInjectionService = textInjectionService else {
+            logger.error("Missing dependencies in transcribeFile")
+            return
+        }
+
+        // Bail out cleanly if a mic recording is already running — file
+        // transcription and live recording would race on transcriptionState.
+        guard appState.transcriptionState != .recording else {
+            appState.errorMessage = "Finish the current recording before transcribing a file"
+            return
+        }
+
+        // Model must be loaded; same precondition as the hotkey path.
+        let modelLoaded = await transcriptionService.isModelLoaded
+        guard modelLoaded else {
+            appState.errorMessage = "Model not loaded yet. Please wait..."
+            return
+        }
+
+        appState.transcriptionState = .transcribing
+        appState.errorMessage = nil
+
+        do {
+            // Load + resample on a background task so the main actor stays responsive.
+            let audioData = try await Task.detached(priority: .userInitiated) {
+                try AudioFileLoader.load(url: url)
+            }.value
+
+            guard !audioData.isTooShort else {
+                appState.transcriptionState = .idle
+                appState.errorMessage = "Audio file is too short"
+                return
+            }
+
+            let text = try await transcriptionService.transcribe(
+                audioData,
+                language: appState.language,
+                prompt: appState.vocabularyPrompt
+            )
+
+            logger.info("File transcription result: \(text)")
+            appState.lastTranscription = text
+
+            if !text.isEmpty {
+                // Clipboard for quick reuse — same NSPasteboard pattern as
+                // TextInjectionService.copyToClipboard, but no Cmd+V paste.
+                await textInjectionService.copyToClipboard(text)
+
+                // Sibling .txt next to the source file. UTF-8, overwrites
+                // any prior run so re-transcribing the same file is idempotent.
+                let outURL = url.appendingPathExtension("txt")
+                do {
+                    try text.write(to: outURL, atomically: true, encoding: .utf8)
+                    logger.info("Wrote transcript to \(outURL.path)")
+                } catch {
+                    // Soft-fail: the user still has the text in clipboard + popover.
+                    logger.error("Failed to write transcript file: \(error.localizedDescription)")
+                }
+            }
+
+            appState.transcriptionState = .idle
+        } catch {
+            appState.transcriptionState = .error(error.localizedDescription)
+            appState.errorMessage = error.localizedDescription
+            logger.error("File transcription failed: \(error.localizedDescription)")
+
+            // Auto-reset to idle after the error has been visible, matching
+            // the hotkey-path behavior.
+            Task {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if case .error = appState.transcriptionState {
+                    appState.transcriptionState = .idle
+                }
+            }
+        }
+    }
+
     /// Cancel current operation
     func cancel() async {
         guard let appState = appState,

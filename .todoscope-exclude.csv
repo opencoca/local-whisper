@@ -1,0 +1,11 @@
+path,reason
+.build,Swift build cache
+.swiftpm,Swift Package Manager local state
+build,generated build output
+dist,packaged release output
+DerivedData,Xcode derived data
+Package.resolved,SPM lockfile (machine-generated)
+*.xcodeproj,Xcode project bundle
+*.xcworkspace,Xcode workspace bundle
+docs/images,binary screenshots / assets
+.DS_Store,macOS finder metadata
