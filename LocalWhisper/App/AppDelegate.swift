@@ -98,16 +98,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     /// Observe app state changes and update the menu bar icon. Also
-    /// auto-opens the popover when a transcription starts so the user
-    /// sees the spinner + filename + timer in-progress UI — regardless
-    /// of whether the trigger was drag-drop or the file picker.
+    /// auto-opens the popover when a *file* transcription starts so the
+    /// user sees the spinner + filename + timer in-progress UI.
+    ///
+    /// Critically, the hotkey/record path must NOT trigger the popover:
+    /// `popover.show(...)` plus `NSApp.activate(...)` would yank focus
+    /// from the user's target app, and the synthetic Cmd+V posted by
+    /// `TextInjectionService` ~100 ms later would then land on our
+    /// popover instead of where the user was typing.
+    ///
+    /// `AppState.currentFileName` is the path-discriminator: it's set
+    /// only on the file path (by `transcribeFile(url:)`) and `nil` on
+    /// the hotkey path. Gating on it is the single condition that keeps
+    /// both flows correct.
     private func setupStateObserver() {
         // Observe transcription state
         appState.$transcriptionState
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
                 self?.updateStatusIcon()
-                if state == .transcribing {
+                if state == .transcribing, AppState.shared.currentFileName != nil {
                     self?.showPopoverIfHidden()
                 }
             }
@@ -128,7 +138,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func showPopoverIfHidden() {
         guard let button = statusItem.button, !popover.isShown else { return }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
     }
     
     /// Update status bar icon based on current state

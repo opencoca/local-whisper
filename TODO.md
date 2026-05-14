@@ -20,15 +20,8 @@ This file tracks active work for the LocalWhisper menu bar app.
 
 ## In Progress
 
-- [x] **Post-verification polish** #ux #infra
-  - [x] Add `currentFileName` + `transcriptionStartedAt` to `AppState` (ephemeral progress fields)
-  - [x] Set/clear progress fields in `TranscriptionCoordinator.transcribeFile`
-  - [x] Add `transcribingSection` to `MenuBarView` (spinner + filename + live mm:ss timer)
-  - [x] Auto-open popover on `.transcribing` via the state observer (covers both drag-drop and file-picker paths)
-  - [x] Single-instance enforcement in `AppDelegate.applicationWillFinishLaunching` via `NSRunningApplication`
-  - [x] `make build` clean; `make app` rebuilt; second `open` of the bundle silently quits — verified with `pgrep -af LocalWhisper`
-  - [x] Confirm the spinner + filename + mm:ss UI displays during a file transcription (manual UI check)
-  - [x] Regression-test the hotkey/record path still works after the coordinator + state changes
+_No active work-in-progress items. Add items here when you start work, or
+use `// FIXME:` inline tags in source._
 
 ## TODO
 
@@ -56,6 +49,13 @@ heading by area (Services, UI, Coordinators, etc.)._
 
 ## Backlog
 
+- [ ] **Live transcription (streaming)** #api #ux
+  - [ ] Research WhisperKit's streaming API (`AudioStreamTranscriber` / `transcribeStream`) — what partial-result shape, what cadence, what cost
+  - [ ] Decide: auto-paste deltas as they arrive, or only paste on release? Trade-off is responsiveness vs. corrections rewriting already-pasted text
+  - [ ] Evolve the `.transcribing` state and the popover in-progress UI to show partials (could show streaming text inline)
+  - [ ] VAD / silence detection so the hotkey can be tap-to-toggle instead of hold-to-record on long dictations
+  - [ ] Test parity with existing custom-vocabulary `promptTokens` path
+
 - [ ] **Notarization & signed releases**: First-launch friction
   - [ ] Investigate Apple Developer ID signing for the `.dmg`
   - [ ] Notarize releases so users no longer need the right-click "Open" workaround called out in the README
@@ -71,6 +71,7 @@ will surface here automatically once the TodoScope scanner runs._
 
 ## Done
 
+- [x] **Auto-paste regression after Phase 2** #bug — adding a state observer that auto-opened the popover on `.transcribing` was correct for the file path but wrong for the hotkey path: `popover.show(...)` + `NSApp.activate(...)` yanked focus from the user's target app, so the synthetic `Cmd+V` from `TextInjectionService` landed on the popover instead. Fix: gate the auto-open on `AppState.shared.currentFileName != nil` so the hotkey path stays invisible (only the icon dot color signals state, same as it always did). One-condition fix; also dropped the deprecated `ignoringOtherApps:` option in `showPopoverIfHidden`.
 - [x] **Stuck-spacebar bug after `Ctrl+Shift+Space` hotkey** #bug — the keyUp handler in `HotkeyManager.handleEvent` consumed every keyUp for the hotkey's keyCode, even ones outside an active hotkey press. After modifiers were released first (clearing `isKeyDown` via the flagsChanged path), or after the user later pressed Space normally, the OS never saw the matching keyUp and treated Space as still-held. Fix: only consume the keyUp when `isKeyDown == true`. KeyUp doesn't generate text, so passing the stray ones through is safe and keeps the OS key-state map in sync.
 - [x] **Audio file transcription** #api #ux — drag-drop on menu-bar icon or "Transcribe File…" picker, writes `<file>.txt` sibling, clipboard + popover; verified live with a 90-min `.m4a` interview
 - [x] **Startr Makefile bootstrap** #infra — `make help` / `run` / `build` / `app` / `open_app` / `logs` / git-flow-next release & hotfix flow / `things_clean`
