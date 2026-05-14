@@ -73,9 +73,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.addSubview(dropView)
         }
 
-        // Create popover with SwiftUI view
+        // Create popover with SwiftUI view.
+        //
+        // No explicit `contentSize` — we let NSPopover size to the hosting
+        // controller's preferred content size, which respects the `frame(width:)`
+        // on `MenuBarView` and grows vertically with intrinsic content. A
+        // hard-coded height would crop the live-transcription transcript.
+        //
+        // `.transient` is the right default (click outside to dismiss) but
+        // it gets flipped to `.applicationDefined` while live mode is
+        // active — see the $isLiveActive sink in setupStateObserver.
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 320, height: 420)
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(
             rootView: MenuBarView()
@@ -153,6 +161,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateStatusIcon()
+            }
+            .store(in: &cancellables)
+
+        // While live transcription is active the popover must stay open so
+        // the user can see the streaming text. `.transient` would dismiss
+        // on focus shifts triggered by the audio engine and SwiftUI button
+        // activation — which is exactly why clicking the popover button
+        // appeared to "do nothing." `.applicationDefined` keeps the popover
+        // open until we explicitly close it via the
+        // `.closeLocalWhisperPopover` notification posted by `stopLive`.
+        appState.$isLiveActive
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] active in
+                self?.popover.behavior = active ? .applicationDefined : .transient
             }
             .store(in: &cancellables)
     }

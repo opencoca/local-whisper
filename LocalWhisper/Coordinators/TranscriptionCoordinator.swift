@@ -299,6 +299,8 @@ final class TranscriptionCoordinator: ObservableObject {
     /// Bails out if a hold recording is mid-flight (interleaving rule);
     /// otherwise starts or stops the live stream.
     func handleLiveHotkey() async {
+        // DIAGNOSTIC: remove after confirming both trigger paths reach here.
+        print("[Coordinator] handleLiveHotkey entered — isLiveActive=\(appState?.isLiveActive ?? false)")
         guard let appState = appState else { return }
 
         // If a hold recording is in progress, ignore — interleaving rule.

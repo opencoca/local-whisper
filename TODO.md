@@ -20,23 +20,18 @@ This file tracks active work for the LocalWhisper menu bar app.
 
 ## In Progress
 
-- [ ] **Live transcription + dedicated trigger** #api #ux #infra
-  - [ ] Verify WhisperKit subsystem properties (`audioEncoder`, `featureExtractor`, etc.) are public for external `AudioStreamTranscriber` construction
-  - [ ] `HotkeyManager`: dual-hotkey refactor (hold + live with parallel `setLiveHotkey` / `liveShortcutString`)
-  - [ ] `AppState`: persisted (`liveHotkey…`, `autoPasteOnHold`, `autoPasteOnLive`, `liveUseVAD`, `liveSilenceThreshold`, `liveRequiredConfirmationSegments`, `liveWriteTxtSibling`, `liveTxtFolder`, `showPartialConfirmationStyling`) + ephemeral (`liveTranscriptConfirmed`, `liveTranscriptUnconfirmed`, `isLiveActive`)
-  - [ ] `LiveTranscriptionService` (NEW): `start(...)` / `stop() -> String` wrapping `AudioStreamTranscriber`
-  - [ ] `TranscriptionCoordinator`: `handleLiveHotkey` / `startLive` / `stopLive` with frontmost-app capture + auto-paste gates; interleaving guard on existing hold path
-  - [ ] `AppDelegate`: wire live hotkey, extend state observer for `.recording && isLiveActive`, add `.closePopover` notification handler
-  - [ ] `MenuBarView`: Start/Stop Live button in `actionsSection`; live attributed transcript in `transcribingSection`
-  - [ ] `SettingsView`: second `ShortcutRecorderView` + per-mode auto-paste toggles in Shortcuts tab; new "Live Mode" tab with VAD/threshold/segments/styling/.txt-sibling controls
+- [ ] **Popover grow + Start-Live button fix** #bug #ux
+  - [ ] Delete the hard-coded `popover.contentSize` in `AppDelegate.setupMenuBar` so the popover sizes to SwiftUI's intrinsic content
+  - [ ] Bump the live-section `ScrollView` from `.frame(maxHeight: 200)` to `.frame(minHeight: 120, maxHeight: 400)` in `MenuBarView`
+  - [ ] Add `$isLiveActive` Combine sink in `AppDelegate.setupStateObserver` that flips `popover.behavior` between `.applicationDefined` (live) and `.transient` (idle)
+  - [ ] Add temporary `print` in `MenuBarView.toggleLive` and at the top of `TranscriptionCoordinator.handleLiveHotkey` to confirm the click path fires end-to-end
   - [ ] `make build` clean
   - [ ] `make app` + relaunch
-  - [ ] Hold-mode regression check: existing `Ctrl+Shift+Space` flow unchanged
-  - [ ] Live via hotkey end-to-end: `Ctrl+Option+Space` toggles, popover opens, text streams, paste lands in target app on stop
-  - [ ] Live via popover button end-to-end
-  - [ ] Interleaving check: each hotkey ignored while the other path is mid-run
-  - [ ] Admin knobs sanity: auto-paste toggles, VAD/threshold/segments visibly affect output, partial-styling toggle works, `.txt` sibling writes to chosen folder
-  - [ ] File transcription regression check still works
+  - [ ] Manual: trigger live mode, watch popover grow as transcript accumulates (no clipping until ScrollView's 400 max)
+  - [ ] Manual: click "Start Live Transcription" in the popover → popover stays open, button label flips to "Stop Live Transcription", live text streams in
+  - [ ] Manual: stop via either trigger → popover closes, paste lands in target app
+  - [ ] Manual: hold-mode regression — `Ctrl+Shift+Space` still works, popover stays closed during hold
+  - [ ] Remove diagnostic prints after the path is confirmed
 
 ## TODO
 

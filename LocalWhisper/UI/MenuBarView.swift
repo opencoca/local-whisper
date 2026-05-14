@@ -202,15 +202,17 @@ struct MenuBarView: View {
                 }
             }
 
-            // The transcript itself, with a height cap so very long
-            // dictations don't push the rest of the popover offscreen.
+            // The transcript itself. minHeight gives a comfortable starting
+            // size so the popover doesn't look empty when streaming begins;
+            // maxHeight lets it grow until very long dictations would push
+            // the action buttons offscreen — then the ScrollView takes over.
             ScrollView {
                 Text(liveAttributedTranscript)
                     .font(.body)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxHeight: 200)
+            .frame(minHeight: 120, maxHeight: 400)
         }
     }
 
@@ -393,6 +395,8 @@ struct MenuBarView: View {
 
     /// Toggle live transcription via the same entry point as the live hotkey.
     private func toggleLive() {
+        // DIAGNOSTIC: remove after confirming the click path reaches the coordinator.
+        print("[MenuBarView] toggleLive tapped — isLiveActive=\(appState.isLiveActive)")
         Task { @MainActor in
             await appState.coordinator.handleLiveHotkey()
         }
