@@ -91,6 +91,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSNotification.Name("ShowSettings"),
             object: nil
         )
+
+        // Live-mode coordinator asks for the popover to close before it
+        // refocuses the target app for Cmd+V — otherwise the paste would
+        // land on the popover itself.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleClosePopover),
+            name: .closeLocalWhisperPopover,
+            object: nil
+        )
+    }
+
+    @objc private func handleClosePopover() {
+        if popover.isShown {
+            popover.performClose(nil)
+        }
     }
     
     @objc private func handleShowSettings() {
@@ -117,7 +133,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
                 self?.updateStatusIcon()
+                // File transcription: show the popover so the user sees the
+                // spinner + filename + timer.
                 if state == .transcribing, AppState.shared.currentFileName != nil {
+                    self?.showPopoverIfHidden()
+                }
+                // Live transcription: show the popover so the user sees the
+                // streaming text. `isLiveActive` is the discriminator that
+                // keeps the hold-mode `.recording` state from triggering
+                // the popover (which would break auto-paste).
+                if state == .recording, AppState.shared.isLiveActive {
                     self?.showPopoverIfHidden()
                 }
             }
@@ -251,21 +276,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func setupGlobalShortcut() {
-        // Load saved hotkey or use default (Cmd+Shift+Space)
+        // Load saved hotkeys (hold + live)
         hotkeyManager.loadSavedHotkey()
-        
+        hotkeyManager.loadSavedLiveHotkey()
+
         hotkeyManager.onKeyDown = {
             Task { @MainActor in
                 await AppState.shared.coordinator.handleHotkeyPressed()
             }
         }
-        
+
         hotkeyManager.onKeyUp = {
             Task { @MainActor in
                 await AppState.shared.coordinator.handleHotkeyReleased()
             }
         }
-        
+
+        // Live hotkey is a toggle — only onKeyDown is wired, by design.
+        // The HotkeyManager still tracks liveIsKeyDown internally for
+        // autorepeat coalescing and the stuck-key poka-yoke.
+        hotkeyManager.onLiveKeyDown = {
+            Task { @MainActor in
+                await AppState.shared.coordinator.handleLiveHotkey()
+            }
+        }
+
         // Start after a short delay to allow permissions to be checked
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.hotkeyManager.start()

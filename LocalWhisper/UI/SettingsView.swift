@@ -14,10 +14,12 @@ struct SettingsView: View {
                     .tag(1)
                 Label("Shortcuts", systemImage: "keyboard")
                     .tag(2)
-                Label("Permissions", systemImage: "lock.shield")
+                Label("Live Mode", systemImage: "waveform")
                     .tag(3)
-                Label("About", systemImage: "info.circle")
+                Label("Permissions", systemImage: "lock.shield")
                     .tag(4)
+                Label("About", systemImage: "info.circle")
+                    .tag(5)
             }
             .listStyle(.sidebar)
             .frame(minWidth: 150)
@@ -31,8 +33,10 @@ struct SettingsView: View {
                 case 2:
                     ShortcutSettingsView()
                 case 3:
-                    PermissionsSettingsView()
+                    LiveModeSettingsView()
                 case 4:
+                    PermissionsSettingsView()
+                case 5:
                     AboutView()
                 default:
                     ModelSettingsView()
@@ -378,7 +382,9 @@ struct ShortcutSettingsView: View {
     @EnvironmentObject var appState: AppState
     @State private var isRecording = false
     @State private var currentShortcut = HotkeyManager.shared.shortcutString
-    
+    @State private var isRecordingLive = false
+    @State private var currentLiveShortcut = HotkeyManager.shared.liveShortcutString
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -387,25 +393,24 @@ struct ShortcutSettingsView: View {
                     Text("Keyboard Shortcuts")
                         .font(.title2)
                         .fontWeight(.semibold)
-                    Text("Configure how you trigger voice transcription.")
+                    Text("Two independent triggers — hold to record, or tap to start live transcription.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-                
-                // Current shortcut
+
+                // Hold shortcut
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Recording Shortcut")
+                    Text("Recording Shortcut (Hold)")
                         .font(.headline)
-                    
+
                     HStack(spacing: 16) {
-                        // Shortcut display / recorder
                         ShortcutRecorderView(
                             isRecording: $isRecording,
                             currentShortcut: $currentShortcut
                         )
-                        
+
                         Spacer()
-                        
+
                         if !isRecording {
                             Button("Change") {
                                 isRecording = true
@@ -416,8 +421,61 @@ struct ShortcutSettingsView: View {
                     .padding()
                     .background(Color(nsColor: .controlBackgroundColor))
                     .cornerRadius(12)
-                    
+
                     Text("Hold to record, release to transcribe")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Toggle("Auto-paste into focused app after stop", isOn: $appState.autoPasteOnHold)
+                        .toggleStyle(.switch)
+                        .padding(.top, 4)
+                    Text(appState.autoPasteOnHold
+                         ? "Transcript is pasted via Cmd+V wherever you were typing."
+                         : "Transcript lands on the clipboard; paste manually with Cmd+V.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                // Live shortcut
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Live Transcription Shortcut (Toggle)")
+                        .font(.headline)
+
+                    HStack(spacing: 16) {
+                        ShortcutRecorderView(
+                            isRecording: $isRecordingLive,
+                            currentShortcut: $currentLiveShortcut,
+                            onSave: { keyCode, modifiers in
+                                HotkeyManager.shared.setLiveHotkey(keyCode: keyCode, modifiers: modifiers)
+                                appState.liveHotkeyKeyCode = keyCode
+                                appState.liveHotkeyModifiers = modifiers
+                            },
+                            readBack: { HotkeyManager.shared.liveShortcutString }
+                        )
+
+                        Spacer()
+
+                        if !isRecordingLive {
+                            Button("Change") {
+                                isRecordingLive = true
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    .padding()
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(12)
+
+                    Text("Tap to start live transcription, tap again to stop. Text streams in the menu-bar popup.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Toggle("Auto-paste into target app after stop", isOn: $appState.autoPasteOnLive)
+                        .toggleStyle(.switch)
+                        .padding(.top, 4)
+                    Text(appState.autoPasteOnLive
+                         ? "On stop, the app you were in becomes frontmost again and the transcript is pasted via Cmd+V."
+                         : "Transcript lands on the clipboard only; activate your target app and paste manually.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -500,17 +558,154 @@ struct ShortcutSettingsView: View {
     }
 }
 
+// MARK: - Live Mode Settings
+struct LiveModeSettingsView: View {
+    @EnvironmentObject var appState: AppState
+    @State private var folderText: String = ""
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                // Header
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Live Mode")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    Text("Streaming transcription settings. The shortcut and auto-paste live under Shortcuts.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                // Voice-activity detection
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Responsiveness")
+                        .font(.headline)
+
+                    Toggle("Use voice-activity detection (VAD)", isOn: $appState.liveUseVAD)
+                        .toggleStyle(.switch)
+                    Text("VAD lets WhisperKit skip silent stretches and only transcribe when speech is detected. Recommended on for most dictation.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Silence threshold")
+                            Spacer()
+                            Text(String(format: "%.2f", appState.liveSilenceThreshold))
+                                .font(.system(.body, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(value: $appState.liveSilenceThreshold, in: 0.0...1.0, step: 0.05)
+                            .disabled(!appState.liveUseVAD)
+                        Text("Lower = more sensitive (transcribes quieter audio). Higher = stricter silence skipping. Default 0.30.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.top, 4)
+
+                    Stepper(value: $appState.liveRequiredConfirmationSegments, in: 1...5) {
+                        HStack {
+                            Text("Segments before a transcript is confirmed")
+                            Spacer()
+                            Text("\(appState.liveRequiredConfirmationSegments)")
+                                .font(.system(.body, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.top, 4)
+                    Text("Lower = transcript locks in faster but may shift more. Higher = more stable text but a longer in-flight tail. Default 2.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(12)
+
+                // Display styling
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Popover display")
+                        .font(.headline)
+
+                    Toggle("Dim unconfirmed text in popover", isOn: $appState.showPartialConfirmationStyling)
+                        .toggleStyle(.switch)
+                    Text("When on, confirmed segments are shown in your primary text color and the still-in-flight tail in a lighter color so you can see what's settled.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(12)
+
+                // Save to disk
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Save transcripts to disk")
+                        .font(.headline)
+
+                    Toggle("Write a `.txt` file after each live stop", isOn: $appState.liveWriteTxtSibling)
+                        .toggleStyle(.switch)
+
+                    HStack {
+                        Text(appState.liveTxtFolder.path)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Button("Choose Folder…") {
+                            pickFolder()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!appState.liveWriteTxtSibling)
+                    }
+
+                    Text("Files are named `live-<timestamp>.txt`. Folder is created automatically if it doesn't exist yet.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(12)
+
+                Spacer()
+            }
+            .padding(24)
+        }
+    }
+
+    private func pickFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a folder to save live transcripts"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = appState.liveTxtFolder
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        appState.liveTxtFolder = url
+    }
+}
+
 // MARK: - Shortcut Recorder View
 struct ShortcutRecorderView: View {
     @Binding var isRecording: Bool
     @Binding var currentShortcut: String
-    
+    /// Called when a new shortcut is captured. The default writes to the hold
+    /// hotkey; the live tab passes a closure that targets `setLiveHotkey`.
+    var onSave: (UInt16, CGEventFlags) -> Void = { keyCode, modifiers in
+        HotkeyManager.shared.setHotkey(keyCode: keyCode, modifiers: modifiers)
+    }
+    /// Resolves the human-readable shortcut after `onSave`. Defaults to the
+    /// hold hotkey's `shortcutString`.
+    var readBack: () -> String = { HotkeyManager.shared.shortcutString }
+
     var body: some View {
         ZStack {
             if isRecording {
                 ShortcutRecorderField(
                     isRecording: $isRecording,
-                    currentShortcut: $currentShortcut
+                    currentShortcut: $currentShortcut,
+                    onSave: onSave,
+                    readBack: readBack
                 )
             } else {
                 // Display current shortcut
@@ -558,12 +753,14 @@ struct ShortcutRecorderView: View {
 struct ShortcutRecorderField: NSViewRepresentable {
     @Binding var isRecording: Bool
     @Binding var currentShortcut: String
-    
+    var onSave: (UInt16, CGEventFlags) -> Void
+    var readBack: () -> String
+
     func makeNSView(context: Context) -> ShortcutRecorderNSView {
         let view = ShortcutRecorderNSView()
         view.onShortcutRecorded = { keyCode, modifiers in
-            HotkeyManager.shared.setHotkey(keyCode: keyCode, modifiers: modifiers)
-            currentShortcut = HotkeyManager.shared.shortcutString
+            onSave(keyCode, modifiers)
+            currentShortcut = readBack()
             isRecording = false
         }
         view.onCancel = {

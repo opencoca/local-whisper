@@ -20,8 +20,23 @@ This file tracks active work for the LocalWhisper menu bar app.
 
 ## In Progress
 
-_No active work-in-progress items. Add items here when you start work, or
-use `// FIXME:` inline tags in source._
+- [ ] **Live transcription + dedicated trigger** #api #ux #infra
+  - [ ] Verify WhisperKit subsystem properties (`audioEncoder`, `featureExtractor`, etc.) are public for external `AudioStreamTranscriber` construction
+  - [ ] `HotkeyManager`: dual-hotkey refactor (hold + live with parallel `setLiveHotkey` / `liveShortcutString`)
+  - [ ] `AppState`: persisted (`liveHotkey…`, `autoPasteOnHold`, `autoPasteOnLive`, `liveUseVAD`, `liveSilenceThreshold`, `liveRequiredConfirmationSegments`, `liveWriteTxtSibling`, `liveTxtFolder`, `showPartialConfirmationStyling`) + ephemeral (`liveTranscriptConfirmed`, `liveTranscriptUnconfirmed`, `isLiveActive`)
+  - [ ] `LiveTranscriptionService` (NEW): `start(...)` / `stop() -> String` wrapping `AudioStreamTranscriber`
+  - [ ] `TranscriptionCoordinator`: `handleLiveHotkey` / `startLive` / `stopLive` with frontmost-app capture + auto-paste gates; interleaving guard on existing hold path
+  - [ ] `AppDelegate`: wire live hotkey, extend state observer for `.recording && isLiveActive`, add `.closePopover` notification handler
+  - [ ] `MenuBarView`: Start/Stop Live button in `actionsSection`; live attributed transcript in `transcribingSection`
+  - [ ] `SettingsView`: second `ShortcutRecorderView` + per-mode auto-paste toggles in Shortcuts tab; new "Live Mode" tab with VAD/threshold/segments/styling/.txt-sibling controls
+  - [ ] `make build` clean
+  - [ ] `make app` + relaunch
+  - [ ] Hold-mode regression check: existing `Ctrl+Shift+Space` flow unchanged
+  - [ ] Live via hotkey end-to-end: `Ctrl+Option+Space` toggles, popover opens, text streams, paste lands in target app on stop
+  - [ ] Live via popover button end-to-end
+  - [ ] Interleaving check: each hotkey ignored while the other path is mid-run
+  - [ ] Admin knobs sanity: auto-paste toggles, VAD/threshold/segments visibly affect output, partial-styling toggle works, `.txt` sibling writes to chosen folder
+  - [ ] File transcription regression check still works
 
 ## TODO
 
@@ -48,13 +63,6 @@ that don't yet have a corresponding card here will be grouped under this
 heading by area (Services, UI, Coordinators, etc.)._
 
 ## Backlog
-
-- [ ] **Live transcription (streaming)** #api #ux
-  - [ ] Research WhisperKit's streaming API (`AudioStreamTranscriber` / `transcribeStream`) — what partial-result shape, what cadence, what cost
-  - [ ] Decide: auto-paste deltas as they arrive, or only paste on release? Trade-off is responsiveness vs. corrections rewriting already-pasted text
-  - [ ] Evolve the `.transcribing` state and the popover in-progress UI to show partials (could show streaming text inline)
-  - [ ] VAD / silence detection so the hotkey can be tap-to-toggle instead of hold-to-record on long dictations
-  - [ ] Test parity with existing custom-vocabulary `promptTokens` path
 
 - [ ] **Notarization & signed releases**: First-launch friction
   - [ ] Investigate Apple Developer ID signing for the `.dmg`

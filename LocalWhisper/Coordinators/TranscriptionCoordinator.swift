@@ -1,8 +1,15 @@
 import Foundation
 import SwiftUI
+import AppKit
 import os.log
 
 private let logger = Logger(subsystem: "com.localwispr.app", category: "Coordinator")
+
+extension Notification.Name {
+    /// Posted by the coordinator when the popover should be dismissed
+    /// (currently: just before live-mode focus restore + paste).
+    static let closeLocalWhisperPopover = Notification.Name("ClosePopover")
+}
 
 /// Orchestrates the hotkey → record → transcribe → inject workflow
 @MainActor
@@ -12,50 +19,64 @@ final class TranscriptionCoordinator: ObservableObject {
     private var transcriptionService: TranscriptionService?
     private var textInjectionService: TextInjectionService?
     private var audioMuteService: AudioMuteService?
-    
+    private var liveTranscriptionService: LiveTranscriptionService?
+
     private var recordingTask: Task<Void, Never>?
-    
+
+    /// Frontmost app captured at live-mode start so we can refocus it
+    /// before pasting on stop. Cleared after paste completes.
+    private var liveTargetApp: NSRunningApplication?
+
     func configure(
         appState: AppState,
         audioService: AudioCaptureService,
         transcriptionService: TranscriptionService,
         textInjectionService: TextInjectionService,
-        audioMuteService: AudioMuteService
+        audioMuteService: AudioMuteService,
+        liveTranscriptionService: LiveTranscriptionService
     ) {
         self.appState = appState
         self.audioService = audioService
         self.transcriptionService = transcriptionService
         self.textInjectionService = textInjectionService
         self.audioMuteService = audioMuteService
+        self.liveTranscriptionService = liveTranscriptionService
     }
     
     /// Called when hotkey is pressed - start recording
     func handleHotkeyPressed() async {
         logger.info("handleHotkeyPressed called")
-        
+
         guard let appState = appState,
               let audioService = audioService else {
             logger.error("appState or audioService is nil")
             return
         }
-        
+
+        // Interleaving guard: if live transcription is running, the hold
+        // hotkey is a no-op. No double-recording, no contested mic.
+        if appState.isLiveActive {
+            logger.info("Ignoring hold hotkey — live transcription is active")
+            return
+        }
+
         // Check if model is loaded
         let modelLoaded = await transcriptionService?.isModelLoaded == true
         logger.info("Model loaded: \(modelLoaded)")
-        
+
         guard modelLoaded else {
             appState.errorMessage = "Model not loaded yet. Please wait..."
             logger.warning("Model not loaded, aborting")
             return
         }
-        
+
         // Check permissions
         logger.info("Mic: \(appState.permissionsService.microphoneGranted), Accessibility: \(appState.permissionsService.accessibilityGranted)")
         guard appState.permissionsService.allPermissionsGranted else {
             appState.errorMessage = "Please grant microphone and accessibility permissions"
             return
         }
-        
+
         // If already recording, treat as toggle (stop)
         if appState.transcriptionState == .recording {
             await handleHotkeyReleased()
@@ -140,15 +161,21 @@ final class TranscriptionCoordinator: ObservableObject {
             
             logger.info("Transcription result: \(text)")
             appState.lastTranscription = text
-            
-            // Inject text
+
+            // Auto-paste is now an explicit setting. When off, the user still
+            // gets the text on the clipboard via `injectText`'s clipboard step
+            // — we use `copyToClipboard` directly to bypass the Cmd+V post.
             if !text.isEmpty {
-                try await textInjectionService.injectText(
-                    text,
-                    useClipboardFallback: appState.useClipboardFallback
-                )
+                if appState.autoPasteOnHold {
+                    try await textInjectionService.injectText(
+                        text,
+                        useClipboardFallback: appState.useClipboardFallback
+                    )
+                } else {
+                    await textInjectionService.copyToClipboard(text)
+                }
             }
-            
+
             appState.transcriptionState = .idle
             appState.errorMessage = nil
             
@@ -264,6 +291,168 @@ final class TranscriptionCoordinator: ObservableObject {
                 }
             }
         }
+    }
+
+    // MARK: - Live transcription
+
+    /// Single toggle entry point for the live hotkey / popover button.
+    /// Bails out if a hold recording is mid-flight (interleaving rule);
+    /// otherwise starts or stops the live stream.
+    func handleLiveHotkey() async {
+        guard let appState = appState else { return }
+
+        // If a hold recording is in progress, ignore — interleaving rule.
+        if appState.transcriptionState == .recording && !appState.isLiveActive {
+            logger.info("Ignoring live hotkey — hold recording is active")
+            return
+        }
+
+        if appState.isLiveActive {
+            await stopLive()
+        } else {
+            await startLive()
+        }
+    }
+
+    /// Begin a streaming live transcription. Captures the currently
+    /// frontmost application so we can refocus it before pasting on stop.
+    func startLive() async {
+        logger.info("startLive called")
+
+        guard let appState = appState,
+              let transcriptionService = transcriptionService,
+              let liveTranscriptionService = liveTranscriptionService else {
+            logger.error("Missing dependencies in startLive")
+            return
+        }
+
+        // Preconditions: model loaded + accessibility/mic granted.
+        let modelLoaded = await transcriptionService.isModelLoaded
+        guard modelLoaded else {
+            appState.errorMessage = "Model not loaded yet. Please wait..."
+            return
+        }
+        guard appState.permissionsService.allPermissionsGranted else {
+            appState.errorMessage = "Please grant microphone and accessibility permissions"
+            return
+        }
+
+        // Capture target app NOW — before the popover steals focus.
+        // LocalWhisper itself can be frontmost (e.g., user is clicking
+        // popover button); in that case there's no useful target to
+        // refocus to, so we leave liveTargetApp nil and skip the paste.
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        if frontmost?.bundleIdentifier == Bundle.main.bundleIdentifier {
+            liveTargetApp = nil
+        } else {
+            liveTargetApp = frontmost
+        }
+        logger.info("Live target app: \(self.liveTargetApp?.localizedName ?? "<none>")")
+
+        appState.errorMessage = nil
+        appState.liveTranscriptConfirmed = ""
+        appState.liveTranscriptUnconfirmed = ""
+        appState.transcriptionStartedAt = Date()
+        appState.isLiveActive = true
+        appState.transcriptionState = .recording
+
+        // The streaming service runs the AudioStreamTranscriber loop in the
+        // background; we get callbacks as state ticks.
+        guard let whisper = await transcriptionService.whisperKitInstance else {
+            appState.errorMessage = "Whisper model isn't ready for streaming yet"
+            await resetLiveState()
+            return
+        }
+
+        do {
+            try await liveTranscriptionService.start(
+                whisperKit: whisper,
+                language: appState.language,
+                prompt: appState.vocabularyPrompt,
+                useVAD: appState.liveUseVAD,
+                silenceThreshold: appState.liveSilenceThreshold,
+                requiredSegmentsForConfirmation: appState.liveRequiredConfirmationSegments,
+                onUpdate: { [weak self] confirmed, unconfirmed in
+                    guard let appState = self?.appState else { return }
+                    appState.liveTranscriptConfirmed = confirmed
+                    appState.liveTranscriptUnconfirmed = unconfirmed
+                }
+            )
+        } catch {
+            logger.error("Failed to start live transcription: \(error.localizedDescription)")
+            appState.errorMessage = error.localizedDescription
+            await resetLiveState()
+        }
+    }
+
+    /// Stop the live stream, optionally write a .txt sibling, then refocus
+    /// the captured target app and paste the final transcript.
+    func stopLive() async {
+        logger.info("stopLive called")
+
+        guard let appState = appState,
+              let liveTranscriptionService = liveTranscriptionService,
+              let textInjectionService = textInjectionService else {
+            logger.error("Missing dependencies in stopLive")
+            return
+        }
+
+        let finalText = await liveTranscriptionService.stop()
+        logger.info("Live final text: \(finalText)")
+
+        // Briefly show .transcribing so the icon doesn't pop straight back
+        // to .idle (covers the focus-restore + paste window).
+        appState.transcriptionState = .transcribing
+
+        // Close the popover before refocusing the target app — leaving it
+        // open would steal Cmd+V.
+        NotificationCenter.default.post(name: .closeLocalWhisperPopover, object: nil)
+
+        // Optional: write the transcript out as a timestamped .txt.
+        if appState.liveWriteTxtSibling, !finalText.isEmpty {
+            let stamp = ISO8601DateFormatter().string(from: Date())
+                .replacingOccurrences(of: ":", with: "-")
+            let outURL = appState.liveTxtFolder.appendingPathComponent("live-\(stamp).txt")
+            do {
+                // Ensure the folder still exists (user may have deleted it).
+                try FileManager.default.createDirectory(at: appState.liveTxtFolder,
+                                                       withIntermediateDirectories: true)
+                try finalText.write(to: outURL, atomically: true, encoding: .utf8)
+                logger.info("Wrote live transcript to \(outURL.path)")
+            } catch {
+                logger.error("Failed to write live transcript: \(error.localizedDescription)")
+            }
+        }
+
+        if !finalText.isEmpty {
+            appState.lastTranscription = finalText
+            if appState.autoPasteOnLive, let target = liveTargetApp {
+                target.activate()
+                // Mirror TextInjectionService's existing 100ms clipboard-ready delay.
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                try? await textInjectionService.injectText(
+                    finalText,
+                    useClipboardFallback: appState.useClipboardFallback
+                )
+            } else {
+                // No paste — at minimum keep the text on the clipboard so
+                // the user can paste manually wherever they want.
+                await textInjectionService.copyToClipboard(finalText)
+            }
+        }
+
+        await resetLiveState()
+    }
+
+    /// Tear down the live UI fields and target-app handle. Always called
+    /// once at the end of stopLive (success or skip-paste).
+    private func resetLiveState() async {
+        appState?.liveTranscriptConfirmed = ""
+        appState?.liveTranscriptUnconfirmed = ""
+        appState?.transcriptionStartedAt = nil
+        appState?.isLiveActive = false
+        appState?.transcriptionState = .idle
+        liveTargetApp = nil
     }
 
     /// Cancel current operation

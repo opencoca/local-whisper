@@ -23,6 +23,14 @@ struct MenuBarView: View {
                 transcribingSection
             }
 
+            // Live transcription — shown while streaming. Distinct from the
+            // .transcribing section above because live mode uses .recording
+            // (audio is still flowing) for most of its lifetime.
+            if appState.isLiveActive {
+                Divider()
+                liveSection
+            }
+
             // Permissions Section (if needed)
             if !appState.permissionsService.allPermissionsGranted {
                 Divider()
@@ -169,6 +177,59 @@ struct MenuBarView: View {
         }
     }
 
+    // MARK: - Live Transcription Section
+    /// Streaming UI: spinner + mm:ss timer + the running transcript text.
+    /// The transcript shows confirmed segments in primary color and the
+    /// unconfirmed tail in secondary, controlled by
+    /// `appState.showPartialConfirmationStyling`.
+    private var liveSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+                Text("Live transcription…")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                if let startedAt = appState.transcriptionStartedAt {
+                    Text(timerInterval: startedAt...Date.distantFuture,
+                         pauseTime: nil,
+                         countsDown: false,
+                         showsHours: false)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            // The transcript itself, with a height cap so very long
+            // dictations don't push the rest of the popover offscreen.
+            ScrollView {
+                Text(liveAttributedTranscript)
+                    .font(.body)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 200)
+        }
+    }
+
+    /// Build the attributed transcript shown during live streaming.
+    /// Confirmed text is primary; the unconfirmed tail is secondary
+    /// unless the user has turned off partial-confirmation styling.
+    private var liveAttributedTranscript: AttributedString {
+        var s = AttributedString(appState.liveTranscriptConfirmed)
+        s.foregroundColor = .primary
+
+        if !appState.liveTranscriptUnconfirmed.isEmpty {
+            let prefix = appState.liveTranscriptConfirmed.isEmpty ? "" : " "
+            var tail = AttributedString(prefix + appState.liveTranscriptUnconfirmed)
+            tail.foregroundColor = appState.showPartialConfirmationStyling ? .secondary : .primary
+            s.append(tail)
+        }
+        return s
+    }
+
     // MARK: - Permissions Section
     private var permissionsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -276,6 +337,23 @@ struct MenuBarView: View {
     // MARK: - Actions Section
     private var actionsSection: some View {
         VStack(spacing: 8) {
+            // Live transcription toggle. Same coordinator entry as the
+            // live hotkey, so keyboard and mouse share one code path.
+            Button(action: toggleLive) {
+                HStack {
+                    Image(systemName: appState.isLiveActive ? "stop.circle.fill" : "waveform")
+                    Text(appState.isLiveActive ? "Stop Live Transcription" : "Start Live Transcription")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(appState.isLiveActive ? .red : .accentColor)
+            .disabled(!appState.isModelLoaded ||
+                      (appState.transcriptionState == .recording && !appState.isLiveActive))
+            .help(appState.isModelLoaded
+                  ? "Toggle live transcription (\(HotkeyManager.shared.liveShortcutString))"
+                  : "Waiting for the model to load…")
+
             // File transcription — opens NSOpenPanel for audio files.
             // The same code path is hit by drag-drop on the menu-bar icon
             // (wired in AppDelegate), so both UIs share one coordinator entry.
@@ -288,7 +366,7 @@ struct MenuBarView: View {
             }
             .buttonStyle(.plain)
             .foregroundColor(.accentColor)
-            .disabled(!appState.isModelLoaded)
+            .disabled(!appState.isModelLoaded || appState.isLiveActive)
             .help(appState.isModelLoaded
                   ? "Pick an audio file (.wav, .mp3, .m4a, .flac, .aiff, .caf)"
                   : "Waiting for the model to load…")
@@ -311,6 +389,13 @@ struct MenuBarView: View {
             }
         }
         .font(.caption)
+    }
+
+    /// Toggle live transcription via the same entry point as the live hotkey.
+    private func toggleLive() {
+        Task { @MainActor in
+            await appState.coordinator.handleLiveHotkey()
+        }
     }
 
     /// Open an NSOpenPanel filtered to audio files. On confirm, hand the

@@ -6,24 +6,38 @@ import os.log
 
 private let hotkeyLogger = Logger(subsystem: "com.localwispr.app", category: "HotkeyManager")
 
-/// Manages global keyboard shortcuts using CGEvent API
+/// Manages global keyboard shortcuts using CGEvent API.
+///
+/// Supports two independent hotkeys on a single event tap:
+/// - **Hold** (`keyCode` / `modifiers`, default Ctrl+Shift+Space): fires
+///   `onKeyDown` / `onKeyUp` as the user holds and releases. Used by the
+///   batch-recording flow.
+/// - **Live** (`liveKeyCode` / `liveModifiers`, default Ctrl+Option+Space):
+///   fires `onLiveKeyDown` only. Live transcription is a toggle, so
+///   `onLiveKeyUp` is intentionally left unwired.
 final class HotkeyManager {
     static let shared = HotkeyManager()
-    
-    // Default shortcut: Ctrl+Shift+Space
+
+    // Hold hotkey (default Ctrl+Shift+Space)
     private(set) var keyCode: UInt16 = UInt16(kVK_Space)
     private(set) var modifiers: CGEventFlags = [.maskControl, .maskShift]
-    
+
+    // Live hotkey (default Ctrl+Option+Space)
+    private(set) var liveKeyCode: UInt16 = UInt16(kVK_Space)
+    private(set) var liveModifiers: CGEventFlags = [.maskControl, .maskAlternate]
+
     fileprivate var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var fnKeyMonitor: Any?
     private var fnKeyWasPressed = false
-    
+
     var onKeyDown: (() -> Void)?
     var onKeyUp: (() -> Void)?
-    
+    var onLiveKeyDown: (() -> Void)?
+
     private var isKeyDown = false
-    
+    private var liveIsKeyDown = false
+
     private init() {}
     
     /// Start monitoring for global hotkey
@@ -207,46 +221,58 @@ final class HotkeyManager {
             NSLog("[HotkeyManager] Fn/Globe key detected - keyCode: %d, flags: %llu", currentKeyCode, currentFlags.rawValue)
         }
         
-        // Check if our hotkey modifiers are pressed
-        let hasRequiredModifiers = checkModifiers(currentFlags)
-        
+        // Check whether the current event matches either hotkey.
+        let hasHoldModifiers = checkModifiers(currentFlags, against: modifiers)
+        let hasLiveModifiers = checkModifiers(currentFlags, against: liveModifiers)
+
         switch type {
         case .keyDown:
-            // Check if this is our hotkey
-            if currentKeyCode == keyCode && hasRequiredModifiers {
+            // Hold hotkey — fires on press, recording starts; autorepeat keyDowns
+            // are coalesced via the `!isKeyDown` guard.
+            if currentKeyCode == keyCode && hasHoldModifiers {
                 if !isKeyDown {
-                    hotkeyLogger.info("Hotkey DOWN detected!")
+                    hotkeyLogger.info("Hold hotkey DOWN detected!")
                     isKeyDown = true
                     DispatchQueue.main.async { [weak self] in
-                        hotkeyLogger.info("Calling onKeyDown callback")
                         self?.onKeyDown?()
                     }
                 }
                 return true // Always consume the event to prevent character input
             }
+
+            // Live hotkey — single-press toggle; we never wire onLiveKeyUp.
+            // Consume autorepeats so a held key doesn't fire toggle repeatedly.
+            if currentKeyCode == liveKeyCode && hasLiveModifiers {
+                if !liveIsKeyDown {
+                    hotkeyLogger.info("Live hotkey DOWN detected!")
+                    liveIsKeyDown = true
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onLiveKeyDown?()
+                    }
+                }
+                return true
+            }
             
         case .keyUp:
-            // Only consume the keyUp if WE are tracking a hotkey press.
-            //
-            // The earlier version consumed every keyUp for the hotkey's
-            // keyCode unconditionally. When `Ctrl+Shift+Space` was the
-            // shortcut, releasing the modifiers first cleared `isKeyDown`
-            // via the .flagsChanged branch below — and the eventual Space
-            // keyUp was still swallowed here. The OS-level "Space pressed"
-            // state then never got its matching release, so subsequent
-            // plain Space presses behaved as if held: the spacebar
-            // appeared stuck until the app quit and the tap tore down.
-            //
-            // KeyUp doesn't generate text (keyDown does), so passing it
-            // through to the system is safe — and necessary to keep the
-            // OS's key-state map in sync.
+            // Hold hotkey — only consume the keyUp if we tracked the keyDown.
+            // See the stuck-spacebar commit for why this guard matters: consuming
+            // strays leaves the OS thinking the key is still held.
             if currentKeyCode == keyCode && isKeyDown {
-                hotkeyLogger.info("Hotkey UP detected!")
+                hotkeyLogger.info("Hold hotkey UP detected!")
                 isKeyDown = false
                 DispatchQueue.main.async { [weak self] in
-                    hotkeyLogger.info("Calling onKeyUp callback")
                     self?.onKeyUp?()
                 }
+                return true
+            }
+
+            // Live hotkey — toggle has no onKeyUp callback, but we still need
+            // to clear `liveIsKeyDown` so the NEXT keyDown counts as a fresh
+            // press (and so autorepeat coalescing works after release).
+            // Consume only if we tracked the down — same poka-yoke rule.
+            if currentKeyCode == liveKeyCode && liveIsKeyDown {
+                hotkeyLogger.info("Live hotkey UP detected (clearing state)")
+                liveIsKeyDown = false
                 return true
             }
             
@@ -278,44 +304,43 @@ final class HotkeyManager {
                 }
             }
             
-            // Handle case where modifiers are released before the key
-            if isKeyDown && !hasRequiredModifiers {
+            // Hold hotkey: handle case where modifiers are released before the
+            // key itself. We mirror the same poka-yoke as keyUp: only act on
+            // events that match a press we're tracking.
+            if isKeyDown && !hasHoldModifiers {
                 isKeyDown = false
                 DispatchQueue.main.async { [weak self] in
                     self?.onKeyUp?()
                 }
             }
-            
+            // Live hotkey: same idea — clear stale state if the user lets
+            // go of a modifier before releasing the key, so the next press
+            // is treated as a fresh toggle.
+            if liveIsKeyDown && !hasLiveModifiers {
+                liveIsKeyDown = false
+            }
+
         default:
             break
         }
-        
+
         return false // Don't consume the event
     }
-    
-    /// Check if current flags match required modifiers
-    private func checkModifiers(_ flags: CGEventFlags) -> Bool {
-        // Special case: if no modifiers required (e.g., for function keys or Globe key)
-        if modifiers.isEmpty || modifiers == .maskSecondaryFn {
-            // For function keys/Globe, we accept with or without Fn modifier
+
+    /// Check if current flags match the supplied target modifiers exactly,
+    /// ignoring the Fn modifier (which fires on plain typing too).
+    private func checkModifiers(_ flags: CGEventFlags, against target: CGEventFlags) -> Bool {
+        // Special case: if no modifiers required (e.g. for function keys or Globe key)
+        if target.isEmpty || target == .maskSecondaryFn {
             return true
         }
-        
-        // Check that all required modifiers are present
-        let hasControl = !modifiers.contains(.maskControl) || flags.contains(.maskControl)
-        let hasShift = !modifiers.contains(.maskShift) || flags.contains(.maskShift)
-        let hasOption = !modifiers.contains(.maskAlternate) || flags.contains(.maskAlternate)
-        let hasCommand = !modifiers.contains(.maskCommand) || flags.contains(.maskCommand)
-        
-        // Also check we don't have extra modifiers we don't want (ignore Fn modifier)
+
         let flagsWithoutFn = CGEventFlags(rawValue: flags.rawValue & ~CGEventFlags.maskSecondaryFn.rawValue)
-        let controlMatch = modifiers.contains(.maskControl) == flagsWithoutFn.contains(.maskControl)
-        let shiftMatch = modifiers.contains(.maskShift) == flagsWithoutFn.contains(.maskShift)
-        let optionMatch = modifiers.contains(.maskAlternate) == flagsWithoutFn.contains(.maskAlternate)
-        let commandMatch = modifiers.contains(.maskCommand) == flagsWithoutFn.contains(.maskCommand)
-        
-        return hasControl && hasShift && hasOption && hasCommand &&
-               controlMatch && shiftMatch && optionMatch && commandMatch
+        let controlMatch = target.contains(.maskControl) == flagsWithoutFn.contains(.maskControl)
+        let shiftMatch   = target.contains(.maskShift)   == flagsWithoutFn.contains(.maskShift)
+        let optionMatch  = target.contains(.maskAlternate) == flagsWithoutFn.contains(.maskAlternate)
+        let commandMatch = target.contains(.maskCommand) == flagsWithoutFn.contains(.maskCommand)
+        return controlMatch && shiftMatch && optionMatch && commandMatch
     }
     
     /// Update the hotkey
@@ -361,11 +386,35 @@ final class HotkeyManager {
             modifiers = CGEventFlags(rawValue: savedModifiers)
         }
     }
+
+    /// Update the live hotkey
+    func setLiveHotkey(keyCode: UInt16, modifiers: CGEventFlags) {
+        self.liveKeyCode = keyCode
+        self.liveModifiers = modifiers
+        UserDefaults.standard.set(Int(keyCode), forKey: "liveHotkeyKeyCode")
+        UserDefaults.standard.set(modifiers.rawValue, forKey: "liveHotkeyModifiers")
+        hotkeyLogger.info("Live hotkey updated to: \(self.liveShortcutString)")
+    }
+
+    /// Load saved live hotkey from UserDefaults
+    func loadSavedLiveHotkey() {
+        if let savedKeyCode = UserDefaults.standard.object(forKey: "liveHotkeyKeyCode") as? Int {
+            liveKeyCode = UInt16(savedKeyCode)
+        }
+        if let savedModifiers = UserDefaults.standard.object(forKey: "liveHotkeyModifiers") as? UInt64 {
+            liveModifiers = CGEventFlags(rawValue: savedModifiers)
+        }
+    }
     
-    /// Get human-readable shortcut string
-    var shortcutString: String {
+    /// Get human-readable shortcut string for the hold hotkey.
+    var shortcutString: String { format(keyCode: keyCode, modifiers: modifiers) }
+
+    /// Get human-readable shortcut string for the live hotkey.
+    var liveShortcutString: String { format(keyCode: liveKeyCode, modifiers: liveModifiers) }
+
+    private func format(keyCode: UInt16, modifiers: CGEventFlags) -> String {
         var parts: [String] = []
-        
+
         if modifiers.contains(.maskSecondaryFn) { parts.append("🌐") }
         if modifiers.contains(.maskControl) { parts.append("⌃") }
         if modifiers.contains(.maskAlternate) { parts.append("⌥") }

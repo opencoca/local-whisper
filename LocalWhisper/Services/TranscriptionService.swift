@@ -13,9 +13,16 @@ actor TranscriptionService {
     var isModelLoaded: Bool {
         whisperKit != nil
     }
-    
+
     var loadedModelName: String? {
         currentModelName
+    }
+
+    /// Hand the live-transcription service a reference to the loaded
+    /// WhisperKit so it can instantiate its own `AudioStreamTranscriber`.
+    /// Returns nil while the model is still loading.
+    var whisperKitInstance: WhisperKit? {
+        whisperKit
     }
     
     init() {
