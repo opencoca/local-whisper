@@ -1123,8 +1123,12 @@ struct AboutView: View {
                 Text("Built with WhisperKit by Argmax")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                
-                Text("© 2024 LocalWhisper")
+
+                Text("© 2026 Startr LLC · AGPL-3.0")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+
+                Text("Based on LocalWhisper (MIT, 2024)")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }

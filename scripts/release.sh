@@ -76,6 +76,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
     <string>public.app-category.productivity</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026 Startr LLC. Licensed under AGPL-3.0. Based on LocalWhisper (MIT, 2024).</string>
 </dict>
 </plist>
 EOF

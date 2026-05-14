@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/t2o2/local-whisper/actions/workflows/ci.yml"><img src="https://github.com/t2o2/local-whisper/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <a href="https://github.com/t2o2/local-whisper/releases/latest"><img src="https://img.shields.io/github/v/release/t2o2/local-whisper" alt="Latest Release"></a>
-  <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
+  <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License">
 </p>
 
 ---
@@ -89,7 +89,20 @@ All transcription happens locally. No audio is sent over the network. No analyti
 
 ## License
 
-MIT
+LocalWhisper is layered:
+
+- **Upstream code (pre-Startr fork)** — originally released under the **MIT License**.
+  That attribution is preserved verbatim in [LICENSE-MIT](LICENSE-MIT). MIT terms
+  continue to apply to the pre-fork code; this project honors them in full.
+- **Startr LLC contributions** — Copyright © 2026 Startr LLC. All changes and
+  additions made under the Startr fork are released under the **GNU Affero General
+  Public License v3.0** (AGPL-3.0). See [LICENSE](LICENSE) for the full text.
+
+Because AGPL-3.0 is compatible with — and stricter than — MIT, the **combined work
+is distributed under AGPL-3.0**. In short: you're free to use, modify, and redistribute
+LocalWhisper, but any modified version you run as a network service or distribute
+must also be released under AGPL-3.0, source code included. The original MIT credit
+travels with the code regardless.
 
 ## Acknowledgments
 
