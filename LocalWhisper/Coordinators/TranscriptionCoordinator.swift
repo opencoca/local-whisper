@@ -197,6 +197,11 @@ final class TranscriptionCoordinator: ObservableObject {
             return
         }
 
+        // Populate the in-progress UI fields before flipping state so the
+        // popover (which auto-opens on `.transcribing`) renders the
+        // spinner + filename + timer atomically with the state change.
+        appState.currentFileName = url.lastPathComponent
+        appState.transcriptionStartedAt = Date()
         appState.transcriptionState = .transcribing
         appState.errorMessage = nil
 
@@ -207,6 +212,8 @@ final class TranscriptionCoordinator: ObservableObject {
             }.value
 
             guard !audioData.isTooShort else {
+                appState.currentFileName = nil
+                appState.transcriptionStartedAt = nil
                 appState.transcriptionState = .idle
                 appState.errorMessage = "Audio file is too short"
                 return
@@ -238,8 +245,12 @@ final class TranscriptionCoordinator: ObservableObject {
                 }
             }
 
+            appState.currentFileName = nil
+            appState.transcriptionStartedAt = nil
             appState.transcriptionState = .idle
         } catch {
+            appState.currentFileName = nil
+            appState.transcriptionStartedAt = nil
             appState.transcriptionState = .error(error.localizedDescription)
             appState.errorMessage = error.localizedDescription
             logger.error("File transcription failed: \(error.localizedDescription)")

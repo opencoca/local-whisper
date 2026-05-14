@@ -12,6 +12,13 @@ final class AppState: ObservableObject {
     @Published var errorMessage: String?
     @Published var modelLoadProgress: Double = 0.0
     @Published var isModelLoaded: Bool = false
+
+    // Ephemeral progress fields for the in-progress UI. Not persisted —
+    // set by the coordinator when a file transcription starts, cleared
+    // when it ends. `nil` filename means the hotkey/record path, so the
+    // UI hides the filename row in that case.
+    @Published var currentFileName: String? = nil
+    @Published var transcriptionStartedAt: Date? = nil
     
     // MARK: - Settings (stored in UserDefaults)
     @Published var selectedModel: String {

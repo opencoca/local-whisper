@@ -15,24 +15,24 @@
       "children": [
         {
           "checked": false,
-          "line_num": 53,
+          "line_num": 67,
           "tags": [],
           "text": "Investigate Apple Developer ID signing for the `.dmg`"
         },
         {
           "checked": false,
-          "line_num": 54,
+          "line_num": 68,
           "tags": [],
           "text": "Notarize releases so users no longer need the right-click \"Open\" workaround called out in the README"
         }
       ],
       "file_path": "TODO.md",
       "height": 80,
-      "id": "264b1dabe954b959",
-      "line_num": 52,
+      "id": "9e3ce5c82a229bb5",
+      "line_num": 66,
       "source": "todo_md",
       "tags": [],
-      "text": "**Notarization & signed releases: First-launch friction**\n- [ ] Investigate Apple Developer ID signing for the `.dmg`\n- [ ] Notarize releases so users no longer need the right-click \"Open\" workaround called out in the README\n\n`TODO.md:L52`",
+      "text": "**Notarization & signed releases: First-launch friction**\n- [ ] Investigate Apple Developer ID signing for the `.dmg`\n- [ ] Notarize releases so users no longer need the right-click \"Open\" workaround called out in the README\n\n`TODO.md:L66`",
       "type": "text",
       "width": 280,
       "x": 10,
@@ -42,24 +42,24 @@
       "children": [
         {
           "checked": false,
-          "line_num": 57,
+          "line_num": 71,
           "tags": [],
           "text": "Surface download progress more clearly in the menu bar UI"
         },
         {
           "checked": false,
-          "line_num": 58,
+          "line_num": 72,
           "tags": [],
           "text": "Handle proxy / offline cases beyond the current `useBackgroundDownloadSession: false` workaround"
         }
       ],
       "file_path": "TODO.md",
       "height": 80,
-      "id": "8b4d680c096777fd",
-      "line_num": 56,
+      "id": "09068b590302f272",
+      "line_num": 70,
       "source": "todo_md",
       "tags": [],
-      "text": "**Model management UX: First-use model download**\n- [ ] Surface download progress more clearly in the menu bar UI\n- [ ] Handle proxy / offline cases beyond the current `useBackgroundDownloadSession: false` workaround\n\n`TODO.md:L56`",
+      "text": "**Model management UX: First-use model download**\n- [ ] Surface download progress more clearly in the menu bar UI\n- [ ] Handle proxy / offline cases beyond the current `useBackgroundDownloadSession: false` workaround\n\n`TODO.md:L70`",
       "type": "text",
       "width": 280,
       "x": 10,
@@ -78,42 +78,42 @@
       "children": [
         {
           "checked": true,
-          "line_num": 31,
+          "line_num": 45,
           "tags": [],
           "text": "Create `.todoscope-exclude.csv` with Swift/Xcode defaults"
         },
         {
           "checked": true,
-          "line_num": 32,
+          "line_num": 46,
           "tags": [],
           "text": "Create `TODO.md` with convention header and column structure"
         },
         {
-          "checked": false,
-          "line_num": 33,
+          "checked": true,
+          "line_num": 47,
           "tags": [],
           "text": "Run the TodoScope scanner against this repo and verify the kanban board reflects reality"
         },
         {
-          "checked": false,
-          "line_num": 34,
+          "checked": true,
+          "line_num": 48,
           "tags": [],
           "text": "Adjust column aliases or exclude paths if the board doesn't match expectations"
         },
         {
           "checked": false,
-          "line_num": 35,
+          "line_num": 49,
           "tags": [],
           "text": "Migrate any existing inline `// TODO` / `// FIXME` / `// BUG` comments to the canonical `TODO:` / `FIXME:` / `BUG:` form so the scanner picks them up"
         }
       ],
       "file_path": "TODO.md",
       "height": 80,
-      "id": "4e0d190800d128a9",
-      "line_num": 30,
+      "id": "b2a9411027b5fb32",
+      "line_num": 44,
       "source": "todo_md",
       "tags": [],
-      "text": "**TodoScope bootstrap: Get the repo into TodoScope conventions**\n- [x] Create `.todoscope-exclude.csv` with Swift/Xcode defaults\n- [x] Create `TODO.md` with convention header and column structure\n- [ ] Run the TodoScope scanner against this repo and verify the kanban board reflects reality\n- [ ] Adjust column aliases or exclude paths if the board doesn't match expectations\n- [ ] Migrate any existing inline `// TODO` / `// FIXME` / `// BUG` comments to the canonical `TODO:` / `FIXME:` / `BUG:` form so the scanner picks them up\n\n`TODO.md:L30`",
+      "text": "**TodoScope bootstrap: Get the repo into TodoScope conventions**\n- [x] Create `.todoscope-exclude.csv` with Swift/Xcode defaults\n- [x] Create `TODO.md` with convention header and column structure\n- [x] Run the TodoScope scanner against this repo and verify the kanban board reflects reality\n- [x] Adjust column aliases or exclude paths if the board doesn't match expectations\n- [ ] Migrate any existing inline `// TODO` / `// FIXME` / `// BUG` comments to the canonical `TODO:` / `FIXME:` / `BUG:` form so the scanner picks them up\n\n`TODO.md:L44`",
       "type": "text",
       "width": 280,
       "x": 360,
@@ -123,30 +123,30 @@
       "children": [
         {
           "checked": false,
-          "line_num": 40,
+          "line_num": 54,
           "tags": [],
           "text": "Decide what surface area is worth testing (audio capture format conversion, hotkey parsing, settings persistence)"
         },
         {
           "checked": false,
-          "line_num": 41,
+          "line_num": 55,
           "tags": [],
           "text": "Add a `Tests/` target to `Package.swift` and a baseline smoke test"
         },
         {
           "checked": false,
-          "line_num": 42,
+          "line_num": 56,
           "tags": [],
           "text": "Wire tests into CI alongside `swift build -c release`"
         }
       ],
       "file_path": "TODO.md",
       "height": 80,
-      "id": "14493127b3a151bf",
-      "line_num": 39,
+      "id": "6638aae6f684f978",
+      "line_num": 53,
       "source": "todo_md",
       "tags": [],
-      "text": "**Test coverage: There are currently no tests**\n- [ ] Decide what surface area is worth testing (audio capture format conversion, hotkey parsing, settings persistence)\n- [ ] Add a `Tests/` target to `Package.swift` and a baseline smoke test\n- [ ] Wire tests into CI alongside `swift build -c release`\n\n`TODO.md:L39`",
+      "text": "**Test coverage: There are currently no tests**\n- [ ] Decide what surface area is worth testing (audio capture format conversion, hotkey parsing, settings persistence)\n- [ ] Add a `Tests/` target to `Package.swift` and a baseline smoke test\n- [ ] Wire tests into CI alongside `swift build -c release`\n\n`TODO.md:L53`",
       "type": "text",
       "width": 280,
       "x": 360,
@@ -154,13 +154,126 @@
     },
     {
       "color": "5",
-      "height": 200,
+      "height": 250,
       "id": "col-in_progress",
       "label": "In Progress",
       "type": "group",
       "width": 300,
       "x": 700,
       "y": 0
+    },
+    {
+      "children": [
+        {
+          "checked": true,
+          "line_num": 24,
+          "tags": [],
+          "text": "Add `AudioFileLoader` service (URL \u2192 AudioData via AVAudioFile + 16 kHz resample)"
+        },
+        {
+          "checked": true,
+          "line_num": 25,
+          "tags": [],
+          "text": "Add `TranscriptionCoordinator.transcribeFile(url:)` (reuses existing `TranscriptionService.transcribe`, skips auto-paste)"
+        },
+        {
+          "checked": true,
+          "line_num": 26,
+          "tags": [],
+          "text": "Add \"Transcribe File\u2026\" button + `NSOpenPanel` in `MenuBarView`"
+        },
+        {
+          "checked": true,
+          "line_num": 27,
+          "tags": [],
+          "text": "Register drag-drop on the menu-bar status-item button (transparent `StatusItemDropView` overlay)"
+        },
+        {
+          "checked": true,
+          "line_num": 28,
+          "tags": [],
+          "text": "Write `<file>.txt` next to source on success, plus clipboard + popover display"
+        },
+        {
+          "checked": false,
+          "line_num": 29,
+          "tags": [],
+          "text": "`make run` and verify with a sample `.wav`or `.m4a` end-to-end"
+        },
+        {
+          "checked": false,
+          "line_num": 30,
+          "tags": [],
+          "text": "`make app` and verify drag-drop on the menu-bar icon end-to-end"
+        }
+      ],
+      "file_path": "TODO.md",
+      "height": 80,
+      "id": "060b5933215c46ad",
+      "line_num": 23,
+      "source": "todo_md",
+      "tags": [
+        "#api",
+        "#ux"
+      ],
+      "text": "**Audio file transcription**\n- [x] Add `AudioFileLoader` service (URL \u2192 AudioData via AVAudioFile + 16 kHz resample)\n- [x] Add `TranscriptionCoordinator.transcribeFile(url:)` (reuses existing `TranscriptionService.transcribe`, skips auto-paste)\n- [x] Add \"Transcribe File\u2026\" button + `NSOpenPanel` in `MenuBarView`\n- [x] Register drag-drop on the menu-bar status-item button (transparent `StatusItemDropView` overlay)\n- [x] Write `<file>.txt` next to source on success, plus clipboard + popover display\n- [ ] `make run` and verify with a sample `.wav`or `.m4a` end-to-end\n- [ ] `make app` and verify drag-drop on the menu-bar icon end-to-end\n\n`#api` `#ux`\n`TODO.md:L23`",
+      "type": "text",
+      "width": 280,
+      "x": 710,
+      "y": 60
+    },
+    {
+      "children": [
+        {
+          "checked": true,
+          "line_num": 33,
+          "tags": [],
+          "text": "Create `.todoscope-exclude.csv` with Swift/Xcode defaults"
+        },
+        {
+          "checked": true,
+          "line_num": 34,
+          "tags": [],
+          "text": "Write `Makefile` with help / show_vars / git-flow-next / things_clean / Swift targets"
+        },
+        {
+          "checked": true,
+          "line_num": 35,
+          "tags": [],
+          "text": "`make help` lists every target"
+        },
+        {
+          "checked": true,
+          "line_num": 36,
+          "tags": [],
+          "text": "`make show_vars` resolves OWNER, PROJECT_NAME, BRANCH, TAG sensibly"
+        },
+        {
+          "checked": false,
+          "line_num": 37,
+          "tags": [],
+          "text": "`make run` succeeds (sanity check on dev loop)"
+        },
+        {
+          "checked": false,
+          "line_num": 38,
+          "tags": [],
+          "text": "`make app` produces `dist/LocalWhisper.app`"
+        }
+      ],
+      "file_path": "TODO.md",
+      "height": 80,
+      "id": "b6450ba7825ceab6",
+      "line_num": 32,
+      "source": "todo_md",
+      "tags": [
+        "#infra"
+      ],
+      "text": "**Startr Makefile bootstrap**\n- [x] Create `.todoscope-exclude.csv` with Swift/Xcode defaults\n- [x] Write `Makefile` with help / show_vars / git-flow-next / things_clean / Swift targets\n- [x] `make help` lists every target\n- [x] `make show_vars` resolves OWNER, PROJECT_NAME, BRANCH, TAG sensibly\n- [ ] `make run` succeeds (sanity check on dev loop)\n- [ ] `make app` produces `dist/LocalWhisper.app`\n\n`#infra`\n`TODO.md:L32`",
+      "type": "text",
+      "width": 280,
+      "x": 710,
+      "y": 150
     },
     {
       "color": "1",
@@ -171,6 +284,39 @@
       "width": 300,
       "x": 1050,
       "y": 0
+    },
+    {
+      "children": [
+        {
+          "checked": false,
+          "line_num": 79,
+          "tags": [],
+          "text": "Review how we're dealing with activating at the moment. There might be a better \"accessability way\" in Mac"
+        },
+        {
+          "checked": false,
+          "line_num": 80,
+          "tags": [],
+          "text": "review hotkey toggle options etc"
+        },
+        {
+          "checked": false,
+          "line_num": 81,
+          "tags": [],
+          "text": "investigate the option of server side controls -- not a bug backlog"
+        }
+      ],
+      "file_path": "TODO.md",
+      "height": 80,
+      "id": "3a7beb2415844aaa",
+      "line_num": 78,
+      "source": "todo_md",
+      "tags": [],
+      "text": "**local-wisper doesn't always let go of the spacebar!!!**\n- [ ] Review how we're dealing with activating at the moment. There might be a better \"accessability way\" in Mac\n- [ ] review hotkey toggle options etc\n- [ ] investigate the option of server side controls -- not a bug backlog\n\n`TODO.md:L78`",
+      "type": "text",
+      "width": 280,
+      "x": 1060,
+      "y": 60
     },
     {
       "color": "6",
@@ -185,11 +331,11 @@
     {
       "file_path": "TODO.md",
       "height": 80,
-      "id": "46b5051a48ec8f5c",
-      "line_num": 67,
+      "id": "8fb679c1078bd7c5",
+      "line_num": 85,
       "source": "todo_md",
       "tags": [],
-      "text": "**Custom vocabulary via WhisperKit `promptTokens` \u2014 token-level hints rather than instruction prompts (commit `0fd5875`)**\n`TODO.md:L67`",
+      "text": "**Custom vocabulary via WhisperKit `promptTokens` \u2014 token-level hints rather than instruction prompts (commit `0fd5875`)**\n`TODO.md:L85`",
       "type": "text",
       "width": 280,
       "x": 1410,
@@ -198,11 +344,11 @@
     {
       "file_path": "TODO.md",
       "height": 80,
-      "id": "10e20cc42c2b37d3",
-      "line_num": 68,
+      "id": "0bbdddc00373c7d5",
+      "line_num": 86,
       "source": "todo_md",
       "tags": [],
-      "text": "**App simplification refactor for reliability (commit `c1d6e5b`)**\n`TODO.md:L68`",
+      "text": "**App simplification refactor for reliability (commit `c1d6e5b`)**\n`TODO.md:L86`",
       "type": "text",
       "width": 280,
       "x": 1410,

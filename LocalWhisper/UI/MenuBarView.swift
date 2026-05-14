@@ -14,7 +14,15 @@ struct MenuBarView: View {
             
             // Status Section
             statusSection
-            
+
+            // In-progress section — shown while a transcription is running.
+            // Spinner + (optional) filename + live mm:ss timer so the user
+            // sees the app is actually working, especially on long files.
+            if appState.transcriptionState == .transcribing {
+                Divider()
+                transcribingSection
+            }
+
             // Permissions Section (if needed)
             if !appState.permissionsService.allPermissionsGranted {
                 Divider()
@@ -121,6 +129,46 @@ struct MenuBarView: View {
         }
     }
     
+    // MARK: - Transcribing Section
+    /// Shown only while a transcription is in flight. The spinner is the
+    /// "we're still alive" signal; the timer is the "and we're making
+    /// progress" signal. SwiftUI's `Text(timerInterval:)` ticks itself,
+    /// so we don't manage a `Timer` here.
+    private var transcribingSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+
+                Text("Transcribing…")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                if let startedAt = appState.transcriptionStartedAt {
+                    // mm:ss live counter. countsDown: false makes it tick up.
+                    Text(timerInterval: startedAt...Date.distantFuture,
+                         pauseTime: nil,
+                         countsDown: false,
+                         showsHours: false)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            if let fileName = appState.currentFileName {
+                Text(fileName)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
     // MARK: - Permissions Section
     private var permissionsSection: some View {
         VStack(alignment: .leading, spacing: 8) {

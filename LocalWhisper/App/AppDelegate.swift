@@ -11,19 +11,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let hotkeyManager = HotkeyManager.shared
     private var cancellables = Set<AnyCancellable>()
     
+    /// Runs before `applicationDidFinishLaunching` and before any UI is
+    /// created — the right hook for single-instance enforcement so we
+    /// terminate before adding a duplicate status item.
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        enforceSingleInstance()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Hide dock icon - menu bar only app
         NSApp.setActivationPolicy(.accessory)
-        
+
         setupMenuBar()
         setupGlobalShortcut()
         setupStateObserver()
-        
+
         Task {
             await initializeServices()
         }
-        
+
         print("[AppDelegate] App launched")
+    }
+
+    /// If another LocalWhisper.app process is already running, activate it
+    /// and terminate ourselves. Standard macOS behavior (Safari, Slack).
+    /// Skipped silently when bundle ID is nil (raw `swift run` builds),
+    /// so dev-time SwiftPM runs are unaffected.
+    private func enforceSingleInstance() {
+        guard let bundleID = Bundle.main.bundleIdentifier else { return }
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let others = NSRunningApplication
+            .runningApplications(withBundleIdentifier: bundleID)
+            .filter { $0.processIdentifier != myPID }
+        guard let existing = others.first else { return }
+        print("[AppDelegate] Another instance is running (pid \(existing.processIdentifier)); focusing it and quitting.")
+        existing.activate()
+        NSApp.terminate(nil)
     }
     
     private func setupMenuBar() {
@@ -37,13 +60,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             // Overlay a transparent drop view so audio files can be dragged
             // onto the menu-bar icon. The view's hitTest returns nil so
-            // mouse clicks still reach the button (popover toggle).
+            // mouse clicks still reach the button (popover toggle). The
+            // state observer auto-opens the popover when `.transcribing`
+            // flips on, so we don't manage popover visibility here.
             let dropView = StatusItemDropView(frame: button.bounds)
             dropView.autoresizingMask = [.width, .height]
-            dropView.onDrop = { [weak self] url in
+            dropView.onDrop = { url in
                 Task { @MainActor in
                     await AppState.shared.coordinator.transcribeFile(url: url)
-                    self?.showPopoverFromDrop()
                 }
             }
             button.addSubview(dropView)
@@ -73,16 +97,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         showSettings()
     }
     
-    /// Observe app state changes and update the menu bar icon
+    /// Observe app state changes and update the menu bar icon. Also
+    /// auto-opens the popover when a transcription starts so the user
+    /// sees the spinner + filename + timer in-progress UI — regardless
+    /// of whether the trigger was drag-drop or the file picker.
     private func setupStateObserver() {
         // Observe transcription state
         appState.$transcriptionState
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
                 self?.updateStatusIcon()
+                if state == .transcribing {
+                    self?.showPopoverIfHidden()
+                }
             }
             .store(in: &cancellables)
-        
+
         // Observe model loaded state
         appState.$isModelLoaded
             .receive(on: DispatchQueue.main)
@@ -90,6 +120,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.updateStatusIcon()
             }
             .store(in: &cancellables)
+    }
+
+    /// Open the popover if it's not already showing. Used to surface the
+    /// in-progress UI when a transcription kicks off from any entry
+    /// point — drag-drop, file picker, or future paths.
+    private func showPopoverIfHidden() {
+        guard let button = statusItem.button, !popover.isShown else { return }
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        NSApp.activate(ignoringOtherApps: true)
     }
     
     /// Update status bar icon based on current state
@@ -152,14 +191,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return image
     }
     
-    /// After a drag-drop transcription kicks off, pop the menu open so the
-    /// user sees the in-progress state and (shortly) the result.
-    private func showPopoverFromDrop() {
-        guard let button = statusItem.button, !popover.isShown else { return }
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
     @objc private func togglePopover() {
         if let button = statusItem.button {
             if popover.isShown {

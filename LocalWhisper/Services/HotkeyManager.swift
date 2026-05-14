@@ -226,17 +226,28 @@ final class HotkeyManager {
             }
             
         case .keyUp:
-            // Check if this is our hotkey key (regardless of modifiers on release)
-            if currentKeyCode == keyCode {
-                if isKeyDown {
-                    hotkeyLogger.info("Hotkey UP detected!")
-                    isKeyDown = false
-                    DispatchQueue.main.async { [weak self] in
-                        hotkeyLogger.info("Calling onKeyUp callback")
-                        self?.onKeyUp?()
-                    }
+            // Only consume the keyUp if WE are tracking a hotkey press.
+            //
+            // The earlier version consumed every keyUp for the hotkey's
+            // keyCode unconditionally. When `Ctrl+Shift+Space` was the
+            // shortcut, releasing the modifiers first cleared `isKeyDown`
+            // via the .flagsChanged branch below — and the eventual Space
+            // keyUp was still swallowed here. The OS-level "Space pressed"
+            // state then never got its matching release, so subsequent
+            // plain Space presses behaved as if held: the spacebar
+            // appeared stuck until the app quit and the tap tore down.
+            //
+            // KeyUp doesn't generate text (keyDown does), so passing it
+            // through to the system is safe — and necessary to keep the
+            // OS's key-state map in sync.
+            if currentKeyCode == keyCode && isKeyDown {
+                hotkeyLogger.info("Hotkey UP detected!")
+                isKeyDown = false
+                DispatchQueue.main.async { [weak self] in
+                    hotkeyLogger.info("Calling onKeyUp callback")
+                    self?.onKeyUp?()
                 }
-                return true // Always consume to prevent any residual character input
+                return true
             }
             
         case .flagsChanged:

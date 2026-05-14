@@ -20,22 +20,15 @@ This file tracks active work for the LocalWhisper menu bar app.
 
 ## In Progress
 
-- [ ] **Audio file transcription** #api #ux
-  - [x] Add `AudioFileLoader` service (URL → AudioData via AVAudioFile + 16 kHz resample)
-  - [x] Add `TranscriptionCoordinator.transcribeFile(url:)` (reuses existing `TranscriptionService.transcribe`, skips auto-paste)
-  - [x] Add "Transcribe File…" button + `NSOpenPanel` in `MenuBarView`
-  - [x] Register drag-drop on the menu-bar status-item button (transparent `StatusItemDropView` overlay)
-  - [x] Write `<file>.txt` next to source on success, plus clipboard + popover display
-  - [ ] `make run` and verify with a sample `.wav` end-to-end
-  - [ ] `make app` and verify drag-drop on the menu-bar icon end-to-end
-
-- [ ] **Startr Makefile bootstrap** #infra
-  - [x] Create `.todoscope-exclude.csv` with Swift/Xcode defaults
-  - [x] Write `Makefile` with help / show_vars / git-flow-next / things_clean / Swift targets
-  - [x] `make help` lists every target
-  - [x] `make show_vars` resolves OWNER, PROJECT_NAME, BRANCH, TAG sensibly
-  - [ ] `make run` succeeds (sanity check on dev loop)
-  - [ ] `make app` produces `dist/LocalWhisper.app`
+- [x] **Post-verification polish** #ux #infra
+  - [x] Add `currentFileName` + `transcriptionStartedAt` to `AppState` (ephemeral progress fields)
+  - [x] Set/clear progress fields in `TranscriptionCoordinator.transcribeFile`
+  - [x] Add `transcribingSection` to `MenuBarView` (spinner + filename + live mm:ss timer)
+  - [x] Auto-open popover on `.transcribing` via the state observer (covers both drag-drop and file-picker paths)
+  - [x] Single-instance enforcement in `AppDelegate.applicationWillFinishLaunching` via `NSRunningApplication`
+  - [x] `make build` clean; `make app` rebuilt; second `open` of the bundle silently quits — verified with `pgrep -af LocalWhisper`
+  - [x] Confirm the spinner + filename + mm:ss UI displays during a file transcription (manual UI check)
+  - [x] Regression-test the hotkey/record path still works after the coordinator + state changes
 
 ## TODO
 
@@ -78,5 +71,8 @@ will surface here automatically once the TodoScope scanner runs._
 
 ## Done
 
+- [x] **Stuck-spacebar bug after `Ctrl+Shift+Space` hotkey** #bug — the keyUp handler in `HotkeyManager.handleEvent` consumed every keyUp for the hotkey's keyCode, even ones outside an active hotkey press. After modifiers were released first (clearing `isKeyDown` via the flagsChanged path), or after the user later pressed Space normally, the OS never saw the matching keyUp and treated Space as still-held. Fix: only consume the keyUp when `isKeyDown == true`. KeyUp doesn't generate text, so passing the stray ones through is safe and keeps the OS key-state map in sync.
+- [x] **Audio file transcription** #api #ux — drag-drop on menu-bar icon or "Transcribe File…" picker, writes `<file>.txt` sibling, clipboard + popover; verified live with a 90-min `.m4a` interview
+- [x] **Startr Makefile bootstrap** #infra — `make help` / `run` / `build` / `app` / `open_app` / `logs` / git-flow-next release & hotfix flow / `things_clean`
 - [x] **Custom vocabulary via WhisperKit `promptTokens`** — token-level hints rather than instruction prompts (commit `0fd5875`)
 - [x] **App simplification refactor** for reliability (commit `c1d6e5b`)
