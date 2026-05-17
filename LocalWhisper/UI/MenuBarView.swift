@@ -238,23 +238,31 @@ struct MenuBarView: View {
             Text("Permissions Required")
                 .font(.caption)
                 .fontWeight(.semibold)
-            
-            // Microphone
+
+            // Both rows route to Settings → Permissions (tab 4) rather than
+            // calling the permission service directly. That way all fix logic
+            // (Grant, Reset & Re-prompt, Refresh) lives in one place.
             MenuPermissionRow(
                 icon: "mic.fill",
                 title: "Microphone",
                 granted: appState.permissionsService.microphoneGranted,
-                action: { appState.permissionsService.openMicrophoneSettings() }
+                action: { openPermissionsSettings() }
             )
-            
-            // Accessibility
+
             MenuPermissionRow(
                 icon: "accessibility",
                 title: "Accessibility",
                 granted: appState.permissionsService.accessibilityGranted,
-                action: { appState.permissionsService.requestAccessibilityPermission() }
+                action: { openPermissionsSettings() }
             )
         }
+    }
+
+    /// Open the app's own Permissions tab — single source of truth for all
+    /// permission fixes (Grant, Reset & Re-prompt, Refresh Status).
+    private func openPermissionsSettings() {
+        appState.settingsDeepLink = 4  // Permissions tab
+        NotificationCenter.default.post(name: NSNotification.Name("ShowSettings"), object: nil)
     }
     
     // MARK: - Last Transcription

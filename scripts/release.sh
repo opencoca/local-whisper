@@ -27,6 +27,12 @@ echo "📦 Building release binary..."
 cd "$PROJECT_DIR"
 swift build -c release
 
+# Derive the canonical repo URL from the git remote so the About screen link
+# always matches wherever the repo lives — no manual updates needed.
+REPO_URL=$(git remote get-url origin \
+    | sed 's|git@github.com:|https://github.com/|' \
+    | sed 's|\.git$||')
+
 # Create app bundle structure
 echo "📁 Creating app bundle..."
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
@@ -78,6 +84,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2026 Startr LLC. Licensed under AGPL-3.0. Based on LocalWhisper (MIT, 2024).</string>
+    <key>RepoURL</key>
+    <string>$REPO_URL</string>
 </dict>
 </plist>
 EOF
@@ -97,24 +105,44 @@ codesign --verify --verbose "$APP_BUNDLE"
 APP_SIZE=$(du -sh "$APP_BUNDLE" | cut -f1)
 echo "📊 App size: $APP_SIZE"
 
-# Create DMG
+# Create DMG via create-dmg (Homebrew-installable; mirrors Startr canonical pattern).
 echo "💿 Creating DMG..."
 DMG_NAME="$APP_NAME-$VERSION.dmg"
 DMG_PATH="$DIST_DIR/$DMG_NAME"
+BACKGROUND="$PROJECT_DIR/assets/dmg_background.png"
+VOLICON="$PROJECT_DIR/LocalWhisper/Resources/AppIcon.icns"
 
-# Create a temporary directory for DMG contents
-DMG_TEMP="$DIST_DIR/dmg_temp"
-mkdir -p "$DMG_TEMP"
-cp -R "$APP_BUNDLE" "$DMG_TEMP/"
+if ! command -v create-dmg >/dev/null 2>&1; then
+    echo "❌ create-dmg not found. Install with: brew install create-dmg"
+    echo "   (Or run 'make setup' from the project root.)"
+    exit 1
+fi
+if [ ! -f "$BACKGROUND" ]; then
+    echo "❌ DMG background missing: $BACKGROUND"
+    echo "   Run 'make setup' or 'swift scripts/make-dmg-background.swift $BACKGROUND'"
+    exit 1
+fi
 
-# Create a symlink to Applications folder
-ln -s /Applications "$DMG_TEMP/Applications"
+# Remove any stale DMG at the destination (create-dmg refuses to overwrite).
+rm -f "$DMG_PATH"
 
-# Create DMG
-hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_TEMP" -ov -format UDZO "$DMG_PATH"
-
-# Clean up
-rm -rf "$DMG_TEMP"
+# create-dmg handles the layout-aware DMG end-to-end:
+#   - styled Finder window (toolbar/sidebar hidden, icon view, sized)
+#   - LocalWhisper.app + Applications symlink at named coordinates
+#   - background picture
+#   - volume icon (matches the app icon so the mounted disk reads as LocalWhisper)
+create-dmg \
+    --volname "$APP_NAME" \
+    --volicon "$VOLICON" \
+    --background "$BACKGROUND" \
+    --window-pos 200 120 \
+    --window-size 540 380 \
+    --icon-size 128 \
+    --icon "$APP_NAME.app" 140 190 \
+    --app-drop-link 400 190 \
+    --no-internet-enable \
+    "$DMG_PATH" \
+    "$APP_BUNDLE"
 
 # Also create a ZIP for GitHub releases
 echo "📦 Creating ZIP..."

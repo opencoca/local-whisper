@@ -15,6 +15,12 @@ final class AppState: ObservableObject {
     @Published var modelLoadProgress: Double = 0.0
     @Published var isModelLoaded: Bool = false
 
+    /// When set, SettingsView jumps to this tab index on next appear or change.
+    /// The popover sets this before posting `ShowSettings` so the user lands
+    /// on the right tab without navigating manually. Cleared by SettingsView
+    /// once consumed. Not persisted — ephemeral navigation hint only.
+    @Published var settingsDeepLink: Int? = nil
+
     // Ephemeral progress fields for the in-progress UI. Not persisted —
     // set by the coordinator when a file transcription starts, cleared
     // when it ends. `nil` filename means the hotkey/record path, so the

@@ -1,7 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "Bash(make build *)"
+      "Bash(make build *)",
+      "Bash(git -C /Users/somma/Documents/Projects/GitHub/homebrew-apps remote -v)",
+      "Read(//Users/somma/bin/TodoScope/**)",
+      "Bash(swift scripts/make-dmg-background.swift assets/dmg_background.png)",
+      "Bash(sips -g pixelWidth -g pixelHeight assets/dmg_background.png)",
+      "Bash(git -C /Users/somma/Documents/Projects/GitHub/local-whisper remote -v)",
+      "Bash(git -C /Users/somma/Documents/Projects/GitHub/local-whisper log --oneline -3)"
+    ],
+    "additionalDirectories": [
+      "/Users/somma/Documents/Projects/GitHub/homebrew-apps/Casks"
     ]
   }
 }

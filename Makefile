@@ -83,6 +83,73 @@ clean:
 	swift package clean
 	rm -rf dist .build
 
+# Path to the brew tap repo (relative to PROJECTPATH). Override with TAP_PATH=...
+TAP_PATH ?= ../homebrew-apps
+
+# One-time setup. Idempotent — re-runnable, skips what's already done.
+# Installs gh + create-dmg via brew, verifies auth, generates the DMG
+# background asset if missing. Run once on a fresh box; thereafter only
+# needed if you nuke ~/.gh credentials or delete assets/.
+setup:
+	@echo "→ Installing required tools (if missing)..."
+	@command -v gh >/dev/null || brew install gh
+	@command -v create-dmg >/dev/null || brew install create-dmg
+	@echo "→ Verifying gh authentication..."
+	@gh auth status >/dev/null 2>&1 || (echo "  Run: gh auth login" && exit 1)
+	@echo "→ Generating DMG background if missing..."
+	@test -f assets/dmg_background.png || \
+		(mkdir -p assets && swift scripts/make-dmg-background.swift assets/dmg_background.png)
+	@echo "  ✅ Setup complete"
+
+# Pre-flight checks before any irreversible release action.
+# READ-ONLY: never modifies state. Fails BEFORE tag creation/push so bad
+# state can't produce a half-released tag. Every error names the fix.
+release_preflight:
+	@echo "→ Pre-flight checks..."
+	@git diff-index --quiet HEAD || \
+		(echo "❌ uncommitted changes — commit or stash first" && exit 1)
+	@command -v gh >/dev/null || \
+		(echo "❌ gh CLI missing — run 'make setup'" && exit 1)
+	@gh auth status >/dev/null 2>&1 || \
+		(echo "❌ gh not authenticated — run 'gh auth login'" && exit 1)
+	@command -v create-dmg >/dev/null || \
+		(echo "❌ create-dmg missing — run 'make setup'" && exit 1)
+	@test -f assets/dmg_background.png || \
+		(echo "❌ DMG background missing — run 'make setup'" && exit 1)
+	@echo "  ✅ All checks passed"
+
+# Full release orchestrator: build → gh release → cask update + push.
+# Idempotent. Re-running on a published tag re-uploads artifacts (--clobber)
+# and skips the cask commit when nothing changed. Invoked automatically by
+# `release_finish` for 3-segment public tags.
+release_all: release_preflight
+	@scripts/release_all.sh
+
+# Lightweight internal tag — no binary release attached. Auto-bumps the
+# 4th segment from the latest tag. Use for in-progress milestones or
+# pre-release checkpoints that should appear in git history without
+# triggering a public binary publish.
+#
+# v1.0.0   → v1.0.0.1
+# v1.0.0.3 → v1.0.0.4
+internal_tag:
+	@LAST=$$(git tag --sort=-v:refname | head -1 | sed 's/^v//'); \
+	if [ -z "$$LAST" ]; then \
+		echo "❌ no tags yet — create v0.0.1+ first via 'make patch_release' or 'make minor_release'"; \
+		exit 1; \
+	fi; \
+	if echo "$$LAST" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+		NEXT="v$${LAST}.1"; \
+	elif echo "$$LAST" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+		NEXT="v$$(echo "$$LAST" | awk -F. '{print $$1"."$$2"."$$3"."$$4+1}')"; \
+	else \
+		echo "❌ latest tag '$$LAST' has unexpected format"; exit 1; \
+	fi; \
+	echo "Tagging $$NEXT (internal — no binary release)"; \
+	git tag -a "$$NEXT" -m "Internal tag $$NEXT"; \
+	git push origin "$$NEXT"; \
+	echo "  ✅ Pushed $$NEXT"
+
 # 5. Git-flow-next release/hotfix flow -------------------------------
 require_gitflow_next:
 	@if ! git flow version 2>/dev/null | grep -q 'git-flow-next'; then \
@@ -106,8 +173,24 @@ hotfix: require_gitflow_next
 	# Start a hotfix with incremented n.n.n.n version (incrementing the fourth number)
 	git flow hotfix start $$(git tag --sort=-v:refname | sed 's/^v//' | head -n 1 | awk -F'.' '{print $$1"."$$2"."$$3"."$$4+1}') && echo "or use 'make hotfix_finish' to finish the hotfix"
 
-release_finish: require_gitflow_next
+# Auto-detect version from the current release/* or hotfix/* branch name.
+# Used by `release_finish` to decide whether to chain into `release_all`.
+RELEASE_VERSION := $(shell git rev-parse --abbrev-ref HEAD | sed -n -e 's/^release\///p' -e 's/^hotfix\///p')
+
+# Finish a release branch — merges, tags, pushes — and AUTO-CHAINS into
+# `release_all` (build + gh release + cask update) for 3-segment public
+# tags. 4-segment tags (use `make internal_tag`) skip the binary publish.
+release_finish: require_gitflow_next release_preflight
 	git flow release finish && git push origin develop && git push origin master && git push --tags && git checkout develop
+	@echo ""
+	@echo "=== Release $(RELEASE_VERSION) tagged and pushed ==="
+	@if echo "$(RELEASE_VERSION)" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+		echo "=== Building binaries for v$(RELEASE_VERSION) ==="; \
+		$(MAKE) release_all; \
+	else \
+		echo "Non-public version $(RELEASE_VERSION) — skipping binary release."; \
+		echo "Use 'make internal_tag' for lightweight checkpoints."; \
+	fi
 
 hotfix_finish: require_gitflow_next
 	git flow hotfix finish && git push origin develop && git push origin master && git push --tags && git checkout master
@@ -120,4 +203,5 @@ things_clean:
 .PHONY: help show_vars require_gitflow_next \
 	minor_release patch_release major_release hotfix \
 	release_finish hotfix_finish things_clean \
-	run build build_release app open_app logs clean
+	run build build_release app open_app logs clean \
+	setup release_preflight release_all internal_tag

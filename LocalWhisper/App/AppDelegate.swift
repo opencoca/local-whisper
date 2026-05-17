@@ -177,6 +177,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.popover.behavior = active ? .applicationDefined : .transient
             }
             .store(in: &cancellables)
+
+        // Restart the HotkeyManager whenever accessibility becomes granted.
+        //
+        // `HotkeyManager.start()` checks `AXIsProcessTrusted()` once and
+        // bails silently if the permission isn't there yet. That means a
+        // user who grants accessibility AFTER launch (or who rebuilt the
+        // app and triggered the Reset & Re-prompt flow) would otherwise
+        // have to quit and relaunch to get global shortcuts working again.
+        // `start()` is idempotent — a no-op if the event tap is already
+        // installed — so it's safe to call on every grant transition.
+        // (Same permission is also what enables CGEvent-based auto-paste,
+        // so this single hook fixes both symptoms.)
+        appState.permissionsService.$accessibilityGranted
+            .receive(on: DispatchQueue.main)
+            .removeDuplicates()
+            .sink { [weak self] granted in
+                if granted {
+                    self?.hotkeyManager.start()
+                }
+            }
+            .store(in: &cancellables)
     }
 
     /// Open the popover if it's not already showing. Used to surface the
@@ -368,6 +389,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+    /// Re-check permissions whenever the app regains focus — covers the
+    /// case where the user granted access in System Settings and then
+    /// switched back before the 2 s poll fires.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        Task {
+            await appState.permissionsService.checkAllPermissions()
+            appState.isModelLoaded = await appState.transcriptionService.isModelLoaded
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         hotkeyManager.stop()
     }

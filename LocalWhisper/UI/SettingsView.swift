@@ -48,6 +48,21 @@ struct SettingsView: View {
         .frame(minWidth: 600, minHeight: 500)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environmentObject(appState)
+        // Deep-link support: the popover (and any other caller) sets
+        // `appState.settingsDeepLink` before opening this window. We consume
+        // it on appear (fresh window) AND on change (window already open).
+        .onAppear {
+            if let tab = appState.settingsDeepLink {
+                selectedTab = tab
+                appState.settingsDeepLink = nil
+            }
+        }
+        .onChange(of: appState.settingsDeepLink) { tab in
+            if let tab {
+                selectedTab = tab
+                appState.settingsDeepLink = nil
+            }
+        }
     }
 }
 
@@ -1006,7 +1021,27 @@ struct PermissionsSettingsView: View {
                 }
                 .background(Color(nsColor: .controlBackgroundColor))
                 .cornerRadius(12)
-                
+
+                // Dev-build escape hatch: ad-hoc re-signed binaries get a new
+                // TCC identity each build, so a previously-granted entry may
+                // no longer match. This button resets the stale TCC entry and
+                // immediately re-prompts so the user doesn't have to visit
+                // System Settings → Accessibility manually.
+                if !appState.permissionsService.accessibilityGranted {
+                    Button {
+                        let task = Process()
+                        task.launchPath = "/usr/bin/tccutil"
+                        task.arguments = ["reset", "Accessibility", "com.localwhisper.app"]
+                        try? task.run()
+                        task.waitUntilExit()
+                        appState.permissionsService.requestAccessibilityPermission()
+                    } label: {
+                        Label("Reset & Re-prompt Accessibility", systemImage: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Use this if you've granted accessibility but the app still shows it as not granted — common after rebuilds due to ad-hoc code signing.")
+                }
+
                 // Refresh button
                 Button {
                     Task {
@@ -1068,10 +1103,27 @@ struct PermissionRow: View {
 
 // MARK: - About View
 struct AboutView: View {
+    /// Pull version from the bundle's Info.plist so we never drift from
+    /// the value `scripts/release.sh` stamps in at build time.
+    /// Falls back to "dev" when run via `swift run` (no Info.plist).
+    private var versionString: String {
+        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        return short ?? "dev"
+    }
+
+    /// Read from the bundle's `RepoURL` key (stamped in by `scripts/release.sh`
+    /// from `git remote get-url origin`). Falls back to a literal for `swift run`
+    /// dev runs where there's no Info.plist.
+    private var repoURL: URL {
+        if let s = Bundle.main.infoDictionary?["RepoURL"] as? String,
+           let u = URL(string: s) { return u }
+        return URL(string: "https://github.com/opencoca/local-whisper")!
+    }
+
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
-            
+
             // App icon
             ZStack {
                 Circle()
@@ -1081,29 +1133,29 @@ struct AboutView: View {
                         endPoint: .bottomTrailing
                     ))
                     .frame(width: 100, height: 100)
-                
+
                 Image(systemName: "waveform")
                     .font(.system(size: 44))
                     .foregroundStyle(.white)
             }
-            
+
             // App name and version
             VStack(spacing: 4) {
                 Text("LocalWhisper")
                     .font(.largeTitle)
                     .fontWeight(.bold)
-                
-                Text("Version 1.0.0")
+
+                Text("Version \(versionString)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            
-            // Description
-            Text("Local voice-to-text transcription\npowered by WhisperKit")
+
+            // Description — reflects the current feature set (hold + live + file)
+            Text("100% offline voice-to-text for macOS\nHold to record, tap to live-transcribe, drop in a file")
                 .font(.body)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
-            
+
             // Privacy badge
             HStack(spacing: 8) {
                 Image(systemName: "lock.shield.fill")
@@ -1115,9 +1167,18 @@ struct AboutView: View {
             .padding(.vertical, 10)
             .background(Color.green.opacity(0.1))
             .cornerRadius(20)
-            
+
+            // Source code link — required by AGPL-3.0 and useful regardless.
+            Link(destination: repoURL) {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left.forwardslash.chevron.right")
+                    Text("Source code")
+                }
+                .font(.caption)
+            }
+
             Spacer()
-            
+
             // Credits
             VStack(spacing: 4) {
                 Text("Built with WhisperKit by Argmax")

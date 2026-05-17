@@ -7,16 +7,41 @@ import AppKit
 final class PermissionsService: ObservableObject {
     @Published var microphoneGranted: Bool = false
     @Published var accessibilityGranted: Bool = false
-    
+
     var allPermissionsGranted: Bool {
         microphoneGranted && accessibilityGranted
     }
-    
+
+    /// Fires every 2 s while accessibility is not yet granted. Invalidates
+    /// itself the moment `AXIsProcessTrusted()` returns true, so it has
+    /// zero overhead once the permission is in place.
+    private var accessibilityPollTimer: Timer?
+
     func checkAllPermissions() async {
         await checkMicrophonePermission()
         checkAccessibilityPermission()
+        if !accessibilityGranted {
+            startAccessibilityPolling()
+        }
     }
-    
+
+    /// Poll `AXIsProcessTrusted()` every 2 s until granted.
+    /// Eliminates the "I granted it but the app didn't notice" failure mode
+    /// without requiring a restart.
+    func startAccessibilityPolling() {
+        guard accessibilityPollTimer == nil else { return }
+        accessibilityPollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if AXIsProcessTrusted() {
+                    self.accessibilityGranted = true
+                    self.accessibilityPollTimer?.invalidate()
+                    self.accessibilityPollTimer = nil
+                }
+            }
+        }
+    }
+
     // MARK: - Microphone Permission
     
     func checkMicrophonePermission() async {
