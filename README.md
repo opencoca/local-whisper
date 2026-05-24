@@ -6,106 +6,78 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/t2o2/local-whisper/actions/workflows/ci.yml"><img src="https://github.com/t2o2/local-whisper/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
-  <a href="https://github.com/t2o2/local-whisper/releases/latest"><img src="https://img.shields.io/github/v/release/t2o2/local-whisper" alt="Latest Release"></a>
+  <a href="https://github.com/opencoca/local-whisper/actions/workflows/ci.yml"><img src="https://github.com/opencoca/local-whisper/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/opencoca/local-whisper/releases/latest"><img src="https://img.shields.io/github/v/release/opencoca/local-whisper" alt="Latest Release"></a>
   <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License">
 </p>
 
 ---
 
-A macOS menu bar app for local speech-to-text powered by [WhisperKit](https://github.com/argmaxinc/WhisperKit). Press a hotkey, speak, and text appears in any app — no internet required.
+Hold a key, speak, release — text appears wherever you're typing. Everything runs on your Mac, powered by [WhisperKit](https://github.com/argmaxinc/WhisperKit). No internet, no servers, no waiting.
 
-## Quick Start
+## Install
 
-### Install (Recommended)
+### From DMG (recommended)
 
-1. Download the latest `.dmg` from [GitHub Releases](https://github.com/t2o2/local-whisper/releases/latest)
-2. Open the DMG and drag **LocalWhisper** to your Applications folder
-3. Open LocalWhisper from Applications
-4. Grant **Microphone** and **Accessibility** permissions when prompted
+1. Download the latest `.dmg` from [Releases](https://github.com/opencoca/local-whisper/releases/latest)
+2. Drag **LocalWhisper** to Applications
+3. Open it and grant **Microphone**, **Accessibility**, and **Input Monitoring** permissions
 
-> **Note**: On first launch, you may see "unidentified developer" warning. Right-click the app and select "Open" to bypass this.
+> First launch: right-click → Open to bypass the unidentified developer warning.
 
-### Install from Source
+### From source
 
 ```bash
-git clone https://github.com/t2o2/local-whisper.git
+git clone https://github.com/opencoca/local-whisper.git
 cd local-whisper
 swift build && swift run
 ```
 
-### Use
+Grant **Microphone**, **Accessibility**, and **Input Monitoring** permissions when prompted.
 
-1. Grant **Microphone** and **Accessibility** permissions when prompted
-2. **Hold** your shortcut key (default: `Ctrl+Shift+Space`) to start recording
-3. Speak while holding the key
-4. **Release** to stop recording and transcribe
+## Use
 
-Text is automatically typed into your focused app.
+Hold `Ctrl+Shift+Space` to record. Release to transcribe. Text is pasted into your focused app.
 
 ## Features
 
-- 🎤 **Global Hotkey** — Hold to record, release to transcribe (default: `Ctrl+Shift+Space`)
-- 🔒 **100% Offline** — All processing on-device, no data leaves your Mac
-- ⚡ **Fast** — CoreML + Neural Engine acceleration on Apple Silicon
-- 📝 **Auto-inject** — Transcribed text typed directly into focused field
-- 📖 **Custom Dictionary** — Add words/names for accurate transcription of technical terms, proper nouns, etc.
+- **Global hotkey** — hold to record, release to transcribe
+- 🔒 **100% offline** — no audio ever leaves your Mac
+- **Fast** — CoreML and Neural Engine on Apple Silicon
+- **Auto-inject** — transcribed text appears in whatever you're typing into
+- **Custom vocabulary** — add names, brands, and terms the model should know
 
 ## Requirements
 
 - macOS 14.0+ (Sonoma)
-- Apple Silicon (M1/M2/M3/M4)
-- 8GB RAM minimum (16GB+ for large models)
+- Apple Silicon (M1 or later)
+- 8 GB RAM minimum (16 GB+ for large models)
 
 ## Configuration
 
-Click the menu bar icon to:
-- Change keyboard shortcut
-- Select transcription model (tiny → large-v3)
-- Add custom vocabulary (product names, technical terms, proper nouns)
-- Adjust settings
+Click the menu bar icon to change the hotkey, select a model (tiny → large-v3), or manage custom vocabulary.
 
-### Custom Dictionary
+Add product names, technical terms, and proper nouns in Settings → Custom Vocabulary. Works best with `small` or larger models — vocabulary provides spelling hints, not instructions.
 
-Add words you want transcribed correctly in Settings → Custom Vocabulary. This helps the model recognize:
-- Product names (e.g., "WhisperKit", "CoreML")
-- Technical terms (e.g., "Kubernetes", "PostgreSQL")  
-- Proper nouns (e.g., names of people, places, companies)
-
-> **Tip**: Works best with larger models (small, medium, large-v3). The dictionary provides spelling hints, not instructions.
-
-<p align="center">
-  <img src="docs/images/settings.png" alt="LocalWhisper Settings" width="600">
-</p>
+![LocalWhisper Settings](docs/images/settings.png)
 
 ## Documentation
 
-- [Model Guide](docs/models.md) — Model comparison, benchmarks, recommendations
-- [Architecture](docs/architecture.md) — Project structure, development guide
+- [Model Guide](docs/models.md) — comparison, benchmarks, recommendations
+- [Architecture](docs/architecture.md) — structure and development guide
 
 ## Privacy
 
-All transcription happens locally. No audio is sent over the network. No analytics or telemetry.
+All transcription runs locally on your Mac. No audio is sent over the network. No analytics, no telemetry.
 
 ## License
 
-LocalWhisper is layered:
+- **Pre-fork code** — MIT License, Copyright © 2024 LocalWhisper. See [LICENSE-MIT](LICENSE-MIT).
+- **Startr LLC contributions** — AGPL-3.0, Copyright © 2026 Startr LLC. See [LICENSE](LICENSE).
 
-- **Upstream code (pre-Startr fork)** — originally released under the **MIT License**.
-  That attribution is preserved verbatim in [LICENSE-MIT](LICENSE-MIT). MIT terms
-  continue to apply to the pre-fork code; this project honors them in full.
-- **Startr LLC contributions** — Copyright © 2026 Startr LLC. All changes and
-  additions made under the Startr fork are released under the **GNU Affero General
-  Public License v3.0** (AGPL-3.0). See [LICENSE](LICENSE) for the full text.
-
-Because AGPL-3.0 is compatible with — and stricter than — MIT, the **combined work
-is distributed under AGPL-3.0**. In short: you're free to use, modify, and redistribute
-LocalWhisper, but any modified version you run as a network service or distribute
-must also be released under AGPL-3.0, source code included. The original MIT credit
-travels with the code regardless.
+The combined work is distributed under AGPL-3.0. If you modify and distribute LocalWhisper — or run it as a network service — you must release those changes under AGPL-3.0 with source included.
 
 ## Acknowledgments
 
 - [WhisperKit](https://github.com/argmaxinc/WhisperKit) — Swift Whisper with CoreML
-- [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) — Global hotkeys
-- [OpenAI Whisper](https://github.com/openai/whisper) — Original model
+- [OpenAI Whisper](https://github.com/openai/whisper) — original model
