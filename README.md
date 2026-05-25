@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/opencoca/local-whisper/actions/workflows/ci.yml"><img src="https://github.com/opencoca/local-whisper/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/opencoca/local-whisper/actions/workflows/ci.yml"><img src="https://github.com/opencoca/local-whisper/actions/workflows/ci.yml/badge.svg?branch=master" alt="CI"></a>
   <a href="https://github.com/opencoca/local-whisper/releases/latest"><img src="https://img.shields.io/github/v/release/opencoca/local-whisper" alt="Latest Release"></a>
   <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License">
 </p>

@@ -7,7 +7,7 @@ help:
 	@echo "This command lists available make commands."
 	@echo ""
 	@echo "Usage example:"
-	@echo "    make run"
+	@echo "    make app    # build + sign the .app for hotkey/mic testing"
 	@echo ""
 	@echo "Available make commands:"
 	@echo ""
@@ -22,9 +22,13 @@ help:
 # Dynamic variable extraction (mirrors startr.sh)
 PROJECTPATH := $(shell git rev-parse --show-toplevel)
 PROJECT     := $(shell echo $$(basename $(PROJECTPATH)) | tr '[:upper:]' '[:lower:]')
-FULL_BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
+# Use symbolic-ref (clean failure on detached HEAD) → short SHA (detached HEAD)
+# → develop fallback (no-commits / fresh clone). Do NOT use
+# `git rev-parse --abbrev-ref HEAD` — it prints "HEAD" on detached HEAD AND
+# fails on a no-commits repo, producing a corrupted "HEAD develop" value.
+FULL_BRANCH := $(shell git symbolic-ref --short HEAD 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo "develop")
 BRANCH      := $(shell echo $(FULL_BRANCH) | sed 's/.*\///' | tr '[:upper:]' '[:lower:]')
-TAG         := $(shell git describe --always --tag)
+TAG         := $(shell git describe --always --tag 2>/dev/null || echo "v0.0.0")
 
 # Owner and project name extracted from git remote URL
 REMOTE_URL   := $(shell git config --get remote.origin.url 2>/dev/null || echo "unknown/unknown")
@@ -37,7 +41,7 @@ CONTAINER := $(PROJECT)-$(BRANCH)
 # Load environment overrides from .env if present
 -include .env
 
-# 3. show_vars (debug helper) ----------------------------------------
+# 3. show_vars + verify (debug helpers) ------------------------------
 show_vars:
 	@echo "=== Dynamic Variables ==="
 	@echo "PROJECTPATH=$(PROJECTPATH)"
@@ -50,6 +54,18 @@ show_vars:
 	@echo "CONTAINER=$(CONTAINER)"
 	@echo "REMOTE_URL=$(REMOTE_URL)"
 	@echo ""
+
+# One-shot scaffold self-check. Bundles every read-only verification into a
+# single make invocation so post-scaffold testing isn't N separate processes.
+verify: show_vars require_gitflow_next
+	@echo "=== Targets defined in this Makefile ==="
+	@LC_ALL=C $(MAKE) -pRrq -f $(firstword $(MAKEFILE_LIST)) : 2>/dev/null | \
+		awk -v RS= -F: '/(^|\n)# Files(\n|$$)/,/(^|\n)# Finished Make data base/ { \
+		if ($$1 !~ "^[#.]") {print "  " $$1}}' | \
+		sort -u | \
+		grep -E -v -e '^  [^[:alnum:]]'
+	@echo ""
+	@echo "OK: Makefile scaffold verified."
 
 # 4. Project-specific custom targets ---------------------------------
 VERSION ?= dev
@@ -206,7 +222,7 @@ things_clean:
 	git clean --exclude='!.env*' -Xdf
 
 # 7. .PHONY ----------------------------------------------------------
-.PHONY: help show_vars require_gitflow_next \
+.PHONY: help show_vars verify require_gitflow_next \
 	minor_release patch_release major_release hotfix \
 	release_finish hotfix_finish things_clean \
 	run build build_release app open_app logs clean \
