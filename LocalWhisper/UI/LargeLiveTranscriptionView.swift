@@ -32,14 +32,57 @@ struct LargeLiveTranscriptionView: View {
                     }
                 }
             }
+
+            stopFooter
         }
-        .padding(40)
+        .padding(.horizontal, 60)
+        .padding(.vertical, 40)
         .frame(minWidth: 600, minHeight: 360)
+        // Explicitly opaque — defends against any vibrancy SwiftUI's
+        // hosting context might otherwise inherit. The user specifically
+        // called out the popover's translucency as hard to read.
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    // MARK: - Footer (stop button)
+
+    /// One obvious affordance for ending live mode. Routes through
+    /// `handleLiveHotkey()` so this button and the hotkey share a single
+    /// code path — no second branch to keep in sync, no risk of the two
+    /// drifting. Pause was deliberately omitted: `AudioStreamTranscriber`
+    /// has no native pause, and simulating one would mislead users about
+    /// state (anti-poka-yoke).
+    private var stopFooter: some View {
+        HStack {
+            Spacer()
+            Button {
+                Task { @MainActor in
+                    await appState.coordinator.handleLiveHotkey()
+                }
+            } label: {
+                Label("Stop", systemImage: "stop.circle.fill")
+                    .font(.system(size: appState.liveLargeWindowFontSize * 0.4,
+                                  weight: .semibold))
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(.red)
+            .disabled(!appState.isLiveActive)
+            Spacer()
+        }
+        .padding(.top, 8)
     }
 
     // MARK: - Header (status + timer)
 
     private var statusHeader: some View {
+        statusHeaderRow
+            .padding(.bottom, 16)
+    }
+
+    private var statusHeaderRow: some View {
         HStack(spacing: 12) {
             if appState.isLiveActive {
                 ProgressView()

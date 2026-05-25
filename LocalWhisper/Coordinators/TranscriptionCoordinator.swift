@@ -162,17 +162,26 @@ final class TranscriptionCoordinator: ObservableObject {
             logger.info("Transcription result: \(text)")
             appState.lastTranscription = text
 
-            // Auto-paste is now an explicit setting. When off, the user still
-            // gets the text on the clipboard via `injectText`'s clipboard step
-            // — we use `copyToClipboard` directly to bypass the Cmd+V post.
+            // Output dispatch:
+            //   - .typeCharacters → keystroke-per-char (works in apps that
+            //     block paste). Wins over autoPasteOnHold because the user
+            //     explicitly chose typing as the delivery method.
+            //   - .paste + autoPasteOnHold = true → clipboard + Cmd+V (default)
+            //   - .paste + autoPasteOnHold = false → clipboard only,
+            //     user pastes manually.
             if !text.isEmpty {
-                if appState.autoPasteOnHold {
-                    try await textInjectionService.injectText(
-                        text,
-                        useClipboardFallback: appState.useClipboardFallback
-                    )
-                } else {
-                    await textInjectionService.copyToClipboard(text)
+                switch appState.outputMethod {
+                case .typeCharacters:
+                    await textInjectionService.typeText(text)
+                case .paste:
+                    if appState.autoPasteOnHold {
+                        try await textInjectionService.injectText(
+                            text,
+                            useClipboardFallback: appState.useClipboardFallback
+                        )
+                    } else {
+                        await textInjectionService.copyToClipboard(text)
+                    }
                 }
             }
 
@@ -426,18 +435,32 @@ final class TranscriptionCoordinator: ObservableObject {
 
         if !finalText.isEmpty {
             appState.lastTranscription = finalText
-            if appState.autoPasteOnLive, let target = liveTargetApp {
+
+            // Refocus the captured target app so the text lands where the
+            // user was working, not on our just-closed popover. (Skip if
+            // the user invoked live mode from the popover button — no
+            // distinct target was captured.)
+            if let target = liveTargetApp {
                 target.activate()
-                // Mirror TextInjectionService's existing 100ms clipboard-ready delay.
                 try? await Task.sleep(nanoseconds: 100_000_000)
-                try? await textInjectionService.injectText(
-                    finalText,
-                    useClipboardFallback: appState.useClipboardFallback
-                )
-            } else {
-                // No paste — at minimum keep the text on the clipboard so
-                // the user can paste manually wherever they want.
-                await textInjectionService.copyToClipboard(finalText)
+            }
+
+            // Output dispatch parallels the hold-mode path:
+            //   - .typeCharacters → universal but slow; wins over auto-paste.
+            //   - .paste + autoPasteOnLive = true → clipboard + Cmd+V.
+            //   - .paste + autoPasteOnLive = false (or no target) → clipboard only.
+            switch appState.outputMethod {
+            case .typeCharacters:
+                await textInjectionService.typeText(finalText)
+            case .paste:
+                if appState.autoPasteOnLive, liveTargetApp != nil {
+                    try? await textInjectionService.injectText(
+                        finalText,
+                        useClipboardFallback: appState.useClipboardFallback
+                    )
+                } else {
+                    await textInjectionService.copyToClipboard(finalText)
+                }
             }
         }
 

@@ -23,9 +23,9 @@ enum AudioFileLoader {
             throw AudioFileLoaderError.unsupportedFormat
         }
 
-        // Read the whole file into a single source buffer. Whisper caps
-        // useful audio at ~30 min anyway (AudioData.isTooLong), so an
-        // in-memory read is fine — no streaming complexity needed.
+        // Read the whole file into a single source buffer. In practice
+        // hour-plus files transcribe fine (90-min interview proven), and
+        // RAM is the actual ceiling — no streaming complexity needed.
         let frameCount = AVAudioFrameCount(file.length)
         guard frameCount > 0,
               let sourceBuffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: frameCount) else {

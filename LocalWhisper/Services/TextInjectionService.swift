@@ -31,6 +31,46 @@ actor TextInjectionService {
         pasteboard.setString(text, forType: .string)
     }
     
+    /// Post one synthesized keystroke per `Character`. Slower than paste
+    /// (~5 ms per char) but works in apps that block programmatic paste —
+    /// password fields, certain banking/security apps, some terminals.
+    ///
+    /// `keyboardSetUnicodeString` lets each event carry an arbitrary
+    /// Unicode scalar (including non-ASCII, emoji, and combining
+    /// sequences) without needing a per-character physical key code.
+    ///
+    /// Requires the same Accessibility permission as `injectText`.
+    func typeText(_ text: String) async {
+        injectionLogger.info("Typing text (char-by-char): \(text.prefix(50))…")
+
+        let source = CGEventSource(stateID: .combinedSessionState)
+        // Iterate by Character so multi-scalar grapheme clusters
+        // (é = e + combining-acute, emoji ZWJ sequences) post as a
+        // single keystroke. Use UTF-16 for keyboardSetUnicodeString.
+        for ch in text {
+            guard let keyDown = CGEvent(keyboardEventSource: source,
+                                        virtualKey: 0, keyDown: true),
+                  let keyUp = CGEvent(keyboardEventSource: source,
+                                      virtualKey: 0, keyDown: false) else {
+                continue
+            }
+            let utf16 = Array(String(ch).utf16)
+            utf16.withUnsafeBufferPointer { buf in
+                if let base = buf.baseAddress {
+                    keyDown.keyboardSetUnicodeString(stringLength: buf.count, unicodeString: base)
+                    keyUp.keyboardSetUnicodeString(stringLength: buf.count, unicodeString: base)
+                }
+            }
+            keyDown.post(tap: .cghidEventTap)
+            keyUp.post(tap: .cghidEventTap)
+            // 5 ms per char keeps total cost reasonable (300-char paragraph
+            // ≈ 1.5 s) while letting receiving apps reliably process each
+            // keystroke without dropping events.
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        injectionLogger.info("Typing complete (\(text.count) chars)")
+    }
+
     /// Simulate Cmd+V keypress using CGEvent
     private func simulatePaste() {
         let source = CGEventSource(stateID: .combinedSessionState)

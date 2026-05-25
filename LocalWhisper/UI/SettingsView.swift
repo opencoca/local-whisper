@@ -495,6 +495,28 @@ struct ShortcutSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 
+                // Output method — applies to both hold and live modes.
+                // Paste is fast but blocked in some apps; typing per-char
+                // is universal but slower (~5 ms/char).
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Output method")
+                        .font(.headline)
+                    Picker("", selection: $appState.outputMethod) {
+                        Text("Paste (fast)").tag(AppState.OutputMethod.paste)
+                        Text("Type one character at a time (universal)")
+                            .tag(AppState.OutputMethod.typeCharacters)
+                    }
+                    .pickerStyle(.segmented)
+                    Text(appState.outputMethod == .typeCharacters
+                         ? "Each character is posted as a real keystroke (~5 ms/char). Works in password fields, secure terminals, and any app that blocks paste."
+                         : "Uses clipboard + Cmd+V. Fast, but some apps (password fields, certain banking/security apps) reject programmatic paste — switch to character mode if your text isn't landing.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(12)
+
                 // Preset shortcuts
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Quick Presets")

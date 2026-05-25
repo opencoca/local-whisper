@@ -75,6 +75,22 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(autoPasteOnLive, forKey: "autoPasteOnLive") }
     }
 
+    /// How transcribed text reaches the focused app.
+    /// - `.paste`: clipboard + synthesized `Cmd+V`. Fast but some apps
+    ///   reject programmatic pastes (password fields, certain banking /
+    ///   security apps, some terminal contexts).
+    /// - `.typeCharacters`: one synthesized keystroke per Unicode scalar.
+    ///   Slow (~5 ms / char) but works universally — looks like real
+    ///   typing to the receiving app, no paste detection.
+    enum OutputMethod: String, CaseIterable {
+        case paste
+        case typeCharacters
+    }
+
+    @Published var outputMethod: OutputMethod {
+        didSet { UserDefaults.standard.set(outputMethod.rawValue, forKey: "outputMethod") }
+    }
+
     // Live-mode VAD + segmentation knobs (passed into AudioStreamTranscriber).
     @Published var liveUseVAD: Bool {
         didSet { UserDefaults.standard.set(liveUseVAD, forKey: "liveUseVAD") }
@@ -231,6 +247,15 @@ final class AppState: ObservableObject {
         self.autoPasteOnHold = UserDefaults.standard.object(forKey: "autoPasteOnHold") as? Bool ?? true
         self.autoPasteOnLive = UserDefaults.standard.object(forKey: "autoPasteOnLive") as? Bool ?? true
 
+        // Default to .paste so existing users see no change in behavior.
+        // .typeCharacters is opt-in for apps that block programmatic paste.
+        if let raw = UserDefaults.standard.string(forKey: "outputMethod"),
+           let m = OutputMethod(rawValue: raw) {
+            self.outputMethod = m
+        } else {
+            self.outputMethod = .paste
+        }
+
         self.liveUseVAD = UserDefaults.standard.object(forKey: "liveUseVAD") as? Bool ?? true
         self.liveSilenceThreshold = (UserDefaults.standard.object(forKey: "liveSilenceThreshold") as? Float) ?? 0.3
         self.liveRequiredConfirmationSegments = (UserDefaults.standard.object(forKey: "liveRequiredConfirmationSegments") as? Int) ?? 2
@@ -250,11 +275,11 @@ final class AppState: ObservableObject {
 
         // Large live-transcription window defaults
         // - enabled: off (opt-in; the menu-bar popover is the default UI)
-        // - font:    48 pt — readable from across a desk, fits ~6 words per line at default window size
+        // - font:    60 pt — readable from across a desk, fits ~5 words per line at default window size
         // - high contrast: on — bold/regular weight contrast helps low-vision users
         // - floating: on — common case is dictating while reading something else
         self.liveLargeWindowEnabled = UserDefaults.standard.object(forKey: "liveLargeWindowEnabled") as? Bool ?? false
-        self.liveLargeWindowFontSize = UserDefaults.standard.object(forKey: "liveLargeWindowFontSize") as? Double ?? 48.0
+        self.liveLargeWindowFontSize = UserDefaults.standard.object(forKey: "liveLargeWindowFontSize") as? Double ?? 60.0
         self.liveLargeWindowHighContrast = UserDefaults.standard.object(forKey: "liveLargeWindowHighContrast") as? Bool ?? true
         self.liveLargeWindowFloating = UserDefaults.standard.object(forKey: "liveLargeWindowFloating") as? Bool ?? true
 

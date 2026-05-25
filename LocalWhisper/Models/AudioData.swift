@@ -18,12 +18,7 @@ struct AudioData {
     var isTooShort: Bool {
         duration < 0.5
     }
-    
-    /// Check if audio is too long (> 30 minutes)
-    var isTooLong: Bool {
-        duration > 1800
-    }
-    
+
     init(samples: [Float]) {
         self.samples = samples
     }

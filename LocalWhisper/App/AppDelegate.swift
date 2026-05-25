@@ -305,11 +305,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Show (or focus) the large accessibility transcription window. Called
     /// when live mode starts AND the user has opted in via
-    /// `liveLargeWindowEnabled`. Reuses the window across live sessions so
-    /// position + size stay where the user left them.
+    /// `liveLargeWindowEnabled`. Reuses the window object across sessions
+    /// (so the SwiftUI hosting controller doesn't have to rebuild), but
+    /// always re-centers on each open — the user asked for a "stage in the
+    /// middle of the screen" feel, and floating-level handles re-positioning
+    /// for users who do want it elsewhere.
     private func showLargeLiveWindow() {
         if let existing = largeLiveWindow {
             existing.level = appState.liveLargeWindowFloating ? .floating : .normal
+            existing.center()
             existing.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -327,9 +331,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Live Transcription"
         window.minSize = NSSize(width: 500, height: 280)
         window.contentViewController = NSHostingController(rootView: view)
-        window.center()
+        // Explicitly opaque — defeats any vibrancy the menu-bar-app
+        // hosting context might otherwise apply, which is exactly what
+        // the user flagged as making the popover hard to read.
+        window.isOpaque = true
+        window.backgroundColor = .windowBackgroundColor
         window.isReleasedWhenClosed = false
         window.level = appState.liveLargeWindowFloating ? .floating : .normal
+        window.center()
         window.makeKeyAndOrderFront(nil)
 
         largeLiveWindow = window
