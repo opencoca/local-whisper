@@ -175,6 +175,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] active in
                 self?.popover.behavior = active ? .applicationDefined : .transient
+                // Large accessibility window — opens at live-start and
+                // closes at live-stop, gated on the user's preference.
+                if active {
+                    if AppState.shared.liveLargeWindowEnabled {
+                        self?.showLargeLiveWindow()
+                    }
+                } else {
+                    self?.hideLargeLiveWindow()
+                }
+            }
+            .store(in: &cancellables)
+
+        // If the user flips the floating preference while the window is
+        // already up, apply it immediately rather than waiting for the
+        // next live session.
+        appState.$liveLargeWindowFloating
+            .receive(on: DispatchQueue.main)
+            .removeDuplicates()
+            .sink { [weak self] floating in
+                self?.largeLiveWindow?.level = floating ? .floating : .normal
             }
             .store(in: &cancellables)
 
@@ -281,6 +301,47 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private var settingsWindow: NSWindow?
+    private var largeLiveWindow: NSWindow?
+
+    /// Show (or focus) the large accessibility transcription window. Called
+    /// when live mode starts AND the user has opted in via
+    /// `liveLargeWindowEnabled`. Reuses the window across live sessions so
+    /// position + size stay where the user left them.
+    private func showLargeLiveWindow() {
+        if let existing = largeLiveWindow {
+            existing.level = appState.liveLargeWindowFloating ? .floating : .normal
+            existing.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let view = LargeLiveTranscriptionView()
+            .environmentObject(appState)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 500),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Live Transcription"
+        window.minSize = NSSize(width: 500, height: 280)
+        window.contentViewController = NSHostingController(rootView: view)
+        window.center()
+        window.isReleasedWhenClosed = false
+        window.level = appState.liveLargeWindowFloating ? .floating : .normal
+        window.makeKeyAndOrderFront(nil)
+
+        largeLiveWindow = window
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Hide the large transcription window when live mode stops. We just
+    /// orderOut rather than close — keeps the window object alive so the
+    /// user's manual resize/move persists across sessions.
+    private func hideLargeLiveWindow() {
+        largeLiveWindow?.orderOut(nil)
+    }
     
     func showSettings() {
         print("[AppDelegate] showSettings called")

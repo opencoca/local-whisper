@@ -100,6 +100,37 @@ final class AppState: ObservableObject {
     @Published var showPartialConfirmationStyling: Bool {
         didSet { UserDefaults.standard.set(showPartialConfirmationStyling, forKey: "showPartialConfirmationStyling") }
     }
+
+    // MARK: - Large Live Transcription Window
+    //
+    // An accessibility-oriented dedicated window that mirrors the live
+    // transcript with large, high-contrast text. Useful for visually
+    // impaired users, presentations, and anyone who wants the transcript
+    // front-and-centre instead of in the translucent menu-bar popover.
+
+    /// Master toggle: when on, the large window opens automatically when
+    /// live transcription starts and closes when it stops.
+    @Published var liveLargeWindowEnabled: Bool {
+        didSet { UserDefaults.standard.set(liveLargeWindowEnabled, forKey: "liveLargeWindowEnabled") }
+    }
+
+    /// Font size (points) for the transcript text in the large window.
+    @Published var liveLargeWindowFontSize: Double {
+        didSet { UserDefaults.standard.set(liveLargeWindowFontSize, forKey: "liveLargeWindowFontSize") }
+    }
+
+    /// When on, confirmed segments render in bold and the unconfirmed tail
+    /// in regular weight (rather than just primary/secondary color). Makes
+    /// the contrast more legible at a glance.
+    @Published var liveLargeWindowHighContrast: Bool {
+        didSet { UserDefaults.standard.set(liveLargeWindowHighContrast, forKey: "liveLargeWindowHighContrast") }
+    }
+
+    /// Keep the large window above other windows (useful for dictating
+    /// while reading from another app).
+    @Published var liveLargeWindowFloating: Bool {
+        didSet { UserDefaults.standard.set(liveLargeWindowFloating, forKey: "liveLargeWindowFloating") }
+    }
     
     // MARK: - Proxy Settings
     @Published var proxyEnabled: Bool {
@@ -216,7 +247,17 @@ final class AppState: ObservableObject {
         }
 
         self.showPartialConfirmationStyling = UserDefaults.standard.object(forKey: "showPartialConfirmationStyling") as? Bool ?? true
-        
+
+        // Large live-transcription window defaults
+        // - enabled: off (opt-in; the menu-bar popover is the default UI)
+        // - font:    48 pt — readable from across a desk, fits ~6 words per line at default window size
+        // - high contrast: on — bold/regular weight contrast helps low-vision users
+        // - floating: on — common case is dictating while reading something else
+        self.liveLargeWindowEnabled = UserDefaults.standard.object(forKey: "liveLargeWindowEnabled") as? Bool ?? false
+        self.liveLargeWindowFontSize = UserDefaults.standard.object(forKey: "liveLargeWindowFontSize") as? Double ?? 48.0
+        self.liveLargeWindowHighContrast = UserDefaults.standard.object(forKey: "liveLargeWindowHighContrast") as? Bool ?? true
+        self.liveLargeWindowFloating = UserDefaults.standard.object(forKey: "liveLargeWindowFloating") as? Bool ?? true
+
         // Load proxy settings
         self.proxyEnabled = UserDefaults.standard.bool(forKey: "proxyEnabled")
         self.proxyHost = UserDefaults.standard.string(forKey: "proxyHost") ?? "127.0.0.1"

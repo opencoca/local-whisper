@@ -13,7 +13,7 @@
 
 ---
 
-Hold a key, speak, release — text appears wherever you're typing. Everything runs on your Mac, powered by [WhisperKit](https://github.com/argmaxinc/WhisperKit). No internet, no servers, no waiting.
+Hold a key, speak, release — text shows up wherever you were typing. Everything runs on your Mac. Nothing leaves it.
 
 ## Install
 
@@ -23,7 +23,7 @@ Hold a key, speak, release — text appears wherever you're typing. Everything r
 2. Drag **LocalWhisper** to Applications
 3. Open it and grant **Microphone**, **Accessibility**, and **Input Monitoring** permissions
 
-> First launch: right-click → Open to bypass the unidentified developer warning.
+> First launch: right-click → Open to get past the unidentified developer warning.
 
 ### From source
 
@@ -37,27 +37,27 @@ Grant **Microphone**, **Accessibility**, and **Input Monitoring** permissions wh
 
 ## Use
 
-Hold `Ctrl+Shift+Space` to record. Release to transcribe. Text is pasted into your focused app.
+Hold `Ctrl+Shift+Space` to record. Release to transcribe. Text is pasted into whatever you were typing in.
 
 ## Features
 
-- **Global hotkey** — hold to record, release to transcribe
-- 🔒 **100% offline** — no audio ever leaves your Mac
-- **Fast** — CoreML and Neural Engine on Apple Silicon
-- **Auto-inject** — transcribed text appears in whatever you're typing into
-- **Custom vocabulary** — add names, brands, and terms the model should know
+- Global hotkey — hold to record, release to transcribe
+- 🔒 100% offline — no audio leaves your Mac
+- Fast — CoreML and Neural Engine on Apple Silicon
+- Auto-inject — transcribed text lands in the focused field
+- Custom vocabulary — teach the model your names, brands, and jargon
 
 ## Requirements
 
 - macOS 14.0+ (Sonoma)
 - Apple Silicon (M1 or later)
-- 8 GB RAM minimum (16 GB+ for large models)
+- 8 GB RAM minimum, 16 GB+ for large models
 
 ## Configuration
 
-Click the menu bar icon to change the hotkey, select a model (tiny → large-v3), or manage custom vocabulary.
+Click the menu bar icon to change the hotkey, pick a model (tiny → large-v3), or add custom vocabulary.
 
-Add product names, technical terms, and proper nouns in Settings → Custom Vocabulary. Works best with `small` or larger models — vocabulary provides spelling hints, not instructions.
+Custom vocabulary lives in Settings → Custom Vocabulary. The model treats it as spelling hints, so larger models respond better.
 
 ![LocalWhisper Settings](docs/images/settings.png)
 
@@ -68,14 +68,14 @@ Add product names, technical terms, and proper nouns in Settings → Custom Voca
 
 ## Privacy
 
-All transcription runs locally on your Mac. No audio is sent over the network. No analytics, no telemetry.
+Everything runs locally. No audio leaves the device. No analytics.
 
 ## License
 
 - **Pre-fork code** — MIT License, Copyright © 2024 LocalWhisper. See [LICENSE-MIT](LICENSE-MIT).
 - **Startr LLC contributions** — AGPL-3.0, Copyright © 2026 Startr LLC. See [LICENSE](LICENSE).
 
-The combined work is distributed under AGPL-3.0. If you modify and distribute LocalWhisper — or run it as a network service — you must release those changes under AGPL-3.0 with source included.
+The combined work ships under AGPL-3.0. Modify it, distribute it, or run it as a service and you must release your changes under the same license with source included.
 
 ## Acknowledgments
 

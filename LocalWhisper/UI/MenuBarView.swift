@@ -403,8 +403,6 @@ struct MenuBarView: View {
 
     /// Toggle live transcription via the same entry point as the live hotkey.
     private func toggleLive() {
-        // DIAGNOSTIC: remove after confirming the click path reaches the coordinator.
-        print("[MenuBarView] toggleLive tapped — isLiveActive=\(appState.isLiveActive)")
         Task { @MainActor in
             await appState.coordinator.handleLiveHotkey()
         }

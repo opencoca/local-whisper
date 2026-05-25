@@ -651,6 +651,53 @@ struct LiveModeSettingsView: View {
                 .background(Color(nsColor: .controlBackgroundColor))
                 .cornerRadius(12)
 
+                // Large accessibility window
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Large transcription window")
+                        .font(.headline)
+
+                    Toggle("Open a large window during live transcription",
+                           isOn: $appState.liveLargeWindowEnabled)
+                        .toggleStyle(.switch)
+                    Text("Opens an opaque, dedicated window with large text — useful for low-vision users, presentations, or just having the transcript front-and-centre instead of in the small popover.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Font size")
+                            Spacer()
+                            Text("\(Int(appState.liveLargeWindowFontSize)) pt")
+                                .font(.system(.body, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(value: $appState.liveLargeWindowFontSize,
+                               in: 24.0...96.0,
+                               step: 2.0)
+                            .disabled(!appState.liveLargeWindowEnabled)
+                    }
+                    .padding(.top, 4)
+
+                    Toggle("High-contrast (bold confirmed text)",
+                           isOn: $appState.liveLargeWindowHighContrast)
+                        .toggleStyle(.switch)
+                        .disabled(!appState.liveLargeWindowEnabled)
+                    Text("Confirmed segments render in semibold weight; the still-being-revised tail stays regular. Easier to distinguish settled vs. in-flux text at a glance.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Toggle("Keep window above other apps",
+                           isOn: $appState.liveLargeWindowFloating)
+                        .toggleStyle(.switch)
+                        .disabled(!appState.liveLargeWindowEnabled)
+                    Text("Window floats above other windows so you can dictate while reading from another app.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(12)
+
                 // Save to disk
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Save transcripts to disk")
