@@ -88,8 +88,12 @@ TAP_PATH ?= ../homebrew-apps
 
 # One-time setup. Idempotent — re-runnable, skips what's already done.
 # Installs gh + create-dmg via brew, verifies auth, generates the DMG
-# background asset if missing. Run once on a fresh box; thereafter only
-# needed if you nuke ~/.gh credentials or delete assets/.
+# background asset if missing, and creates a persistent self-signed
+# code-signing identity ("LocalWhisper Dev") in the login keychain so
+# TCC permissions (Accessibility, Microphone, etc.) survive rebuilds.
+# Without this identity, every `make app` produces an ad-hoc signature
+# that macOS treats as a brand-new app — orphaning the prior grant.
+# Per-machine; not committed to git. Run once on a fresh box.
 setup:
 	@echo "→ Installing required tools (if missing)..."
 	@command -v gh >/dev/null || brew install gh
@@ -99,6 +103,8 @@ setup:
 	@echo "→ Generating DMG background if missing..."
 	@test -f assets/dmg_background.png || \
 		(mkdir -p assets && swift scripts/make-dmg-background.swift assets/dmg_background.png)
+	@echo "→ Ensuring 'LocalWhisper Dev' code-signing identity exists..."
+	@bash scripts/ensure-dev-signing-identity.sh
 	@echo "  ✅ Setup complete"
 
 # Pre-flight checks before any irreversible release action.

@@ -70,6 +70,24 @@ Settings use manual `UserDefaults` get/set in `AppState` `@Published` property `
 - Custom vocabulary works via WhisperKit `promptTokens` (token-level hints, not instruction prompts) -- larger models respond better
 - Logs write to `~/Library/Logs/LocalWhisper.log` and `/tmp/localwispr_keys.log` (debug key events)
 
+## Dev Signing
+
+`make app` produces a `dist/LocalWhisper.app` signed with a persistent self-signed identity named **`LocalWhisper Dev`**. This identity is created once per machine by `make setup` ([scripts/ensure-dev-signing-identity.sh](scripts/ensure-dev-signing-identity.sh)) and lives in the user's login keychain.
+
+**Why this matters:** macOS keys TCC entries (Accessibility, Microphone, etc.) by the cryptographic signing identity, NOT by bundle id or path. If the build is ad-hoc signed (`codesign --sign -`), every rebuild gets a fresh identity and the previously granted Accessibility row is orphaned — hotkeys + auto-paste stop working until the user re-grants in System Settings. With a persistent identity, the grant survives all rebuilds on that machine.
+
+**One-time setup on a fresh box:**
+
+```bash
+make setup                                                # creates 'LocalWhisper Dev' cert
+tccutil reset Accessibility com.localwhisper.app          # clear orphaned grants from prior ad-hoc builds
+tccutil reset Microphone com.localwhisper.app
+make clean && make app && make open_app                   # rebuild and launch
+# macOS prompts once for permissions; grant; never need to re-grant.
+```
+
+If `codesign` prompts for keychain access on the first build, click **Always Allow** — the cert is locked to your machine and you'll never see the prompt again. The cert is NOT committed to git; each contributor generates their own.
+
 ## Debugging
 
 Enable verbose WhisperKit logging in `TranscriptionService`:
@@ -78,3 +96,5 @@ whisperKit = try await WhisperKit(model: modelName, verbose: true, logLevel: .de
 ```
 
 Status bar dot colors indicate state: yellow=loading, green=ready, red=recording, blue=transcribing, orange=error.
+
+`HotkeyManager` writes `start()` / `stop()` outcomes to `~/Library/Logs/LocalWhisper.log` — `tail` it after any "hotkeys broken" symptom to see whether the event tap actually installed. A `start() FAILED — both HID and session tapCreate returned nil` line is the canonical signal of a stale TCC entry.

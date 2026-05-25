@@ -1,5 +1,6 @@
 import SwiftUI
 import Carbon.HIToolbox
+import AVFoundation
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
@@ -1091,24 +1092,54 @@ struct PermissionsSettingsView: View {
                 .background(Color(nsColor: .controlBackgroundColor))
                 .cornerRadius(12)
 
-                // Dev-build escape hatch: ad-hoc re-signed binaries get a new
-                // TCC identity each build, so a previously-granted entry may
-                // no longer match. This button resets the stale TCC entry and
-                // immediately re-prompts so the user doesn't have to visit
-                // System Settings → Accessibility manually.
-                if !appState.permissionsService.accessibilityGranted {
+                // One escape hatch for both permissions. Why combined:
+                //   - Legacy ad-hoc builds left stale TCC state behind. Both
+                //     Accessibility and Microphone get the same disease and
+                //     the same cure (`tccutil reset` → re-request).
+                //   - Sonoma+ removed the user's ability to manually add an
+                //     app to the Microphone list — it must come from an
+                //     `AVCaptureDevice.requestAccess` call. So a button is
+                //     the only way out of the `.denied` trap.
+                //   - One button is honest about the symmetry: if you've hit
+                //     the rebuild-killed-my-permissions trap once, you've hit
+                //     it for both — fix them in one click.
+                if !appState.permissionsService.accessibilityGranted
+                    || !appState.permissionsService.microphoneGranted {
                     Button {
-                        let task = Process()
-                        task.launchPath = "/usr/bin/tccutil"
-                        task.arguments = ["reset", "Accessibility", "com.localwhisper.app"]
-                        try? task.run()
-                        task.waitUntilExit()
+                        // Reset both TCC rows for this bundle id. Idempotent —
+                        // safe to run even if a permission is currently granted
+                        // (the polling timer + Combine sink will re-establish
+                        // anything still trusted on the kernel side).
+                        for service in ["Accessibility", "Microphone"] {
+                            let task = Process()
+                            task.launchPath = "/usr/bin/tccutil"
+                            task.arguments = ["reset", service, "com.localwhisper.app"]
+                            try? task.run()
+                            task.waitUntilExit()
+                        }
+                        // Accessory apps without active UI can have permission
+                        // prompts suppressed by macOS. Force-activate before
+                        // requesting, so the dialogs surface reliably.
+                        NSApp.activate(ignoringOtherApps: true)
+                        // Accessibility uses AXIsProcessTrustedWithOptions —
+                        // this returns immediately, the system prompt comes
+                        // out-of-band.
                         appState.permissionsService.requestAccessibilityPermission()
+                        // Microphone uses async AVCaptureDevice.requestAccess.
+                        // Give tccutil's state-reset a beat to settle, then
+                        // request. The follow-up checkAllPermissions refreshes
+                        // the @Published values once both decisions are in.
+                        Task {
+                            try? await Task.sleep(nanoseconds: 200_000_000)
+                            _ = await AVCaptureDevice.requestAccess(for: .audio)
+                            await appState.permissionsService.checkAllPermissions()
+                        }
                     } label: {
-                        Label("Reset & Re-prompt Accessibility", systemImage: "arrow.counterclockwise")
+                        Label("Reset & Re-request Permissions",
+                              systemImage: "arrow.counterclockwise")
                     }
                     .buttonStyle(.bordered)
-                    .help("Use this if you've granted accessibility but the app still shows it as not granted — common after rebuilds due to ad-hoc code signing.")
+                    .help("One-click recovery for both Accessibility and Microphone. Resets cached TCC state and re-surfaces the macOS system prompts. Use after a rebuild on a legacy ad-hoc-signed install, or any time a permission shows red but the system pane has no LocalWhisper row.")
                 }
 
                 // Refresh button

@@ -93,9 +93,36 @@ EOF
 # Create PkgInfo
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
-# Sign the app (ad-hoc signing for local distribution)
-echo "🔐 Signing app (ad-hoc)..."
-codesign --force --deep --sign - "$APP_BUNDLE"
+# Sign the app with a persistent identity so macOS TCC entries
+# (Accessibility, Microphone, etc.) survive rebuilds. The "LocalWhisper Dev"
+# identity is created once per machine by `make setup` — without it,
+# codesign falls back to ad-hoc signing and every rebuild orphans the
+# user's permissions. Fail loudly with a fix hint if it's missing.
+SIGN_IDENTITY="LocalWhisper Dev"
+# NOT using `-v` — that flag filters to chain-trusted identities and excludes
+# our self-signed dev cert. codesign accepts untrusted identities as long as
+# the private key is present and the cert has the code-signing EKU.
+if ! security find-identity -p codesigning login.keychain 2>/dev/null \
+    | grep -q "\"$SIGN_IDENTITY\""; then
+    echo "❌ Code-signing identity '$SIGN_IDENTITY' not found in login keychain."
+    echo "   Run: make setup"
+    echo "   (creates a persistent self-signed identity so TCC permissions"
+    echo "    survive rebuilds — otherwise hotkeys/auto-paste break after"
+    echo "    every \`make app\`.)"
+    exit 1
+fi
+echo "🔐 Signing app with '$SIGN_IDENTITY'..."
+# NOT using --options runtime here. Hardened runtime requires specific
+# entitlements (com.apple.security.device.audio-input for the mic,
+# com.apple.security.cs.disable-library-validation for SPM, etc.) that
+# this app doesn't yet ship — without them, AVCaptureDevice.requestAccess
+# silently fails in the kernel and macOS never surfaces a permission
+# prompt. Hardened runtime becomes mandatory only at notarization time;
+# until then, leave it off so dev builds Just Work.
+codesign --force --deep \
+    --sign "$SIGN_IDENTITY" \
+    --identifier com.localwhisper.app \
+    "$APP_BUNDLE"
 
 # Verify the app
 echo "✅ Verifying app bundle..."

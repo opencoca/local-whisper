@@ -6,6 +6,30 @@ import os.log
 
 private let hotkeyLogger = Logger(subsystem: "com.localwispr.app", category: "HotkeyManager")
 
+/// Append a one-line entry to `~/Library/Logs/LocalWhisper.log`. Mirrors
+/// `AppDelegate.log()` so HotkeyManager start/stop outcomes show up next
+/// to the other startup lines — crucial for diagnosing the "I granted
+/// Accessibility but hotkeys still don't work" failure mode without
+/// requiring Console.app. The duplication with AppDelegate is deliberate:
+/// extracting a shared helper would couple two files that otherwise have
+/// no reason to know about each other.
+private func hotkeyLogToFile(_ message: String) {
+    let logFile = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Logs/LocalWhisper.log")
+    let timestamp = ISO8601DateFormatter().string(from: Date())
+    let line = "[\(timestamp)] [HotkeyManager] \(message)\n"
+    guard let data = line.data(using: .utf8) else { return }
+    if FileManager.default.fileExists(atPath: logFile.path) {
+        if let handle = try? FileHandle(forWritingTo: logFile) {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            try? handle.close()
+        }
+    } else {
+        try? data.write(to: logFile)
+    }
+}
+
 /// Manages global keyboard shortcuts using CGEvent API.
 ///
 /// Supports two independent hotkeys on a single event tap:
@@ -42,13 +66,18 @@ final class HotkeyManager {
     
     /// Start monitoring for global hotkey
     func start() {
-        guard eventTap == nil else { return }
-        
+        guard eventTap == nil else {
+            hotkeyLogToFile("start() called but tap already exists — no-op")
+            return
+        }
+
         // Check accessibility permission
         guard AXIsProcessTrusted() else {
             print("[HotkeyManager] Accessibility permission not granted")
+            hotkeyLogToFile("start() aborted — AXIsProcessTrusted() == false")
             return
         }
+        hotkeyLogToFile("start() proceeding — AXIsProcessTrusted() == true")
         
         let eventMask: CGEventMask = (1 << CGEventType.keyDown.rawValue) |
                                       (1 << CGEventType.keyUp.rawValue) |
@@ -76,6 +105,7 @@ final class HotkeyManager {
                 userInfo: Unmanaged.passUnretained(self).toOpaque()
             ) else {
                 print("[HotkeyManager] Failed to create event tap")
+                hotkeyLogToFile("start() FAILED — both HID and session tapCreate returned nil. Likely cause: stale TCC entry (signing identity changed). Fix: Settings → Permissions → Reset & Re-prompt Accessibility, then relaunch.")
                 return
             }
             eventTap = sessionTap
@@ -84,17 +114,19 @@ final class HotkeyManager {
                 CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
                 CGEvent.tapEnable(tap: sessionTap, enable: true)
                 print("[HotkeyManager] Started monitoring with session event tap")
+                hotkeyLogToFile("start() OK — session event tap installed")
             }
             return
         }
-        
+
         eventTap = tap
         runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        
+
         if let source = runLoopSource {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
             CGEvent.tapEnable(tap: tap, enable: true)
             print("[HotkeyManager] Started monitoring with HID event tap (can override system shortcuts)")
+            hotkeyLogToFile("start() OK — HID event tap installed")
         }
         
         // Also add NSEvent monitor for Globe/Fn key detection (flagsChanged)
@@ -194,6 +226,7 @@ final class HotkeyManager {
         eventTap = nil
         runLoopSource = nil
         print("[HotkeyManager] Stopped monitoring")
+        hotkeyLogToFile("stop() OK — tap torn down")
     }
     
     /// Handle keyboard event
