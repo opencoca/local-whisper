@@ -28,6 +28,11 @@ TAP_PATH="${TAP_PATH:-../homebrew-apps}"
 REPO_URL=$(git remote get-url origin \
     | sed 's|git@github.com:|https://github.com/|' \
     | sed 's|\.git$||')
+# Owner/repo slug for passing to `gh` explicitly. Required when this fork
+# has multiple remotes (e.g. `upstream` from t2o2), because gh's
+# default-repo selection can otherwise pick the wrong one and refuse the
+# release with "tag exists locally but has not been pushed to <upstream>".
+REPO_SLUG=$(echo "$REPO_URL" | sed -E 's|^https://github.com/||')
 
 echo ""
 echo "  🎙️  LocalWhisper Release — ${TAG}"
@@ -60,17 +65,17 @@ echo "  ✅ Built $(basename "$DMG") + $(basename "$ZIP")"
 #         before touching the cask so a half-state doesn't lie about
 #         the SHA of an unpublished artifact) ---
 echo ""
-if gh release view "$TAG" >/dev/null 2>&1; then
+if gh release view --repo "$REPO_SLUG" "$TAG" >/dev/null 2>&1; then
     echo "→ Release $TAG exists — replacing artifacts (--clobber)..."
-    gh release upload "$TAG" --clobber "$DMG" "$ZIP"
+    gh release upload --repo "$REPO_SLUG" "$TAG" --clobber "$DMG" "$ZIP"
 else
     echo "→ Creating GitHub Release: $TAG"
-    gh release create "$TAG" \
+    gh release create --repo "$REPO_SLUG" "$TAG" \
         --title "LocalWhisper $TAG" \
         --generate-notes \
         "$DMG" "$ZIP"
 fi
-RELEASE_URL=$(gh release view "$TAG" --json url --jq .url 2>/dev/null || echo "${REPO_URL}/releases/tag/${TAG}")
+RELEASE_URL=$(gh release view --repo "$REPO_SLUG" "$TAG" --json url --jq .url 2>/dev/null || echo "${REPO_URL}/releases/tag/${TAG}")
 echo "  ✅ ${RELEASE_URL}"
 
 # --- 4. Update brew cask (idempotent — only commits when the file
