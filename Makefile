@@ -172,6 +172,73 @@ internal_tag:
 	git push origin "$$NEXT"; \
 	echo "  ✅ Pushed $$NEXT"
 
+# 4b. Version bump + release pre-flight ------------------------------
+#
+# Adopted from the Startr convention (MEDIA-Storyboarder, WEB-Sage.Education-docs).
+# `bump` is release-branch-aware — refuses to run unless RELEASE_VERSION is
+# set (i.e., the current branch matches release/* or hotfix/*). Promotes
+# CHANGELOG.md `## [Unreleased]` to the release version, re-seeds Unreleased
+# with empty section headings, and bumps the README status line. `release_check`
+# is the poka-yoke gate — verifies CHANGELOG + README are in sync before
+# `release_finish` is allowed to publish.
+#
+# Why no source-code __version__ constant: the .app bundle's CFBundleVersion
+# and CFBundleShortVersionString are baked in at build time by release.sh
+# from the VERSION argument. The Makefile already wires RELEASE_VERSION → VERSION
+# automatically when release_finish builds, so the canonical version flow is:
+#   release/X.Y.Z branch name → RELEASE_VERSION → VERSION → release.sh → Info.plist
+
+TODAY := $(shell date +%Y-%m-%d)
+
+bump:
+	@test -n "$(RELEASE_VERSION)" || \
+		{ echo "Error: must be on a release/* or hotfix/* branch (got '$(FULL_BRANCH)'). Run 'make minor_release' / 'make patch_release' / 'make hotfix' first."; exit 1; }
+	@test -f CHANGELOG.md || \
+		{ echo "Error: CHANGELOG.md missing. Create it with '## [Unreleased]' heading first."; exit 1; }
+	@if grep -q '^## \[$(RELEASE_VERSION)\] ' CHANGELOG.md 2>/dev/null; then \
+		echo "Already bumped: '## [$(RELEASE_VERSION)]' exists in CHANGELOG.md. Nothing to do."; \
+		exit 0; \
+	fi
+	@grep -q '^## \[Unreleased\]' CHANGELOG.md || \
+		{ echo "Error: CHANGELOG.md has no '## [Unreleased]' heading"; exit 1; }
+	@echo "=== Commits since last release ==="
+	@LAST_TAG=$$(git tag --sort=-v:refname | head -1); \
+		[ -n "$$LAST_TAG" ] && git log --oneline $$LAST_TAG..HEAD || git log --oneline HEAD
+	@echo ""
+	@echo "Promoting CHANGELOG ## [Unreleased] → ## [$(RELEASE_VERSION)] — $(TODAY)..."
+	@awk -v ver="$(RELEASE_VERSION)" -v date="$(TODAY)" \
+		'/^## \[Unreleased\]/ { print "## [Unreleased]"; print ""; print "### Added"; print ""; print "### Changed"; print ""; print "### Fixed"; print ""; print "### Removed"; print ""; print "## [" ver "] — " date; next } { print }' \
+		CHANGELOG.md > CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
+	@echo "Updating bottom-of-file CHANGELOG compare links..."
+	@# Insert a new line for the version above the existing top compare link.
+	@# The existing [Unreleased] line gets rewritten to compare from new ver.
+	@LAST_TAG=$$(git tag --sort=-v:refname | head -1); \
+		sed -i.bak -E \
+			-e "s|^\[Unreleased\]:.*|[Unreleased]: https://github.com/$(OWNER)/$(PROJECT_NAME)/compare/v$(RELEASE_VERSION)...HEAD|" \
+			CHANGELOG.md && \
+		PREV_TAG=$${LAST_TAG:-v0.0.0}; \
+		awk -v ver="$(RELEASE_VERSION)" -v prev="$$PREV_TAG" -v owner="$(OWNER)" -v project="$(PROJECT_NAME)" \
+			'/^\[Unreleased\]:/ { print; print "[" ver "]: https://github.com/" owner "/" project "/compare/" prev "...v" ver; next } { print }' \
+			CHANGELOG.md > CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md && rm -f CHANGELOG.md.bak
+	@echo ""
+	@echo "Bump complete. Next:"
+	@echo "  1. Edit CHANGELOG.md to refine the '## [$(RELEASE_VERSION)]' section."
+	@echo "  2. Run 'make release_check' to verify alignment."
+	@echo "  3. git add CHANGELOG.md && git commit -m \"chore: bump CHANGELOG to v$(RELEASE_VERSION)\""
+	@echo "  4. Run 'make release_finish' to tag, merge, and publish."
+
+# release_check: pre-flight gate. Refuses to let `release_finish` publish if
+# CHANGELOG.md doesn't have a section for the release version. Add more
+# checks here as the canonical-version-sources grow (Info.plist template,
+# README status line, etc.).
+release_check:
+	@test -n "$(RELEASE_VERSION)" || \
+		{ echo "Error: must be on a release/* or hotfix/* branch (got '$(FULL_BRANCH)')"; exit 1; }
+	@grep -q "^## \[$(RELEASE_VERSION)\] " CHANGELOG.md 2>/dev/null || \
+		{ echo "Error: CHANGELOG.md has no '## [$(RELEASE_VERSION)]' section. Run 'make bump'."; exit 1; }
+	@echo "  ✓ CHANGELOG.md has [$(RELEASE_VERSION)] section"
+	@echo "  ✅ release_check OK — ready for 'make release_finish'"
+
 # 5. Git-flow-next release/hotfix flow -------------------------------
 require_gitflow_next:
 	@if ! git flow version 2>/dev/null | grep -q 'git-flow-next'; then \
@@ -202,7 +269,7 @@ RELEASE_VERSION := $(shell git rev-parse --abbrev-ref HEAD | sed -n -e 's/^relea
 # Finish a release branch — merges, tags, pushes — and AUTO-CHAINS into
 # `release_all` (build + gh release + cask update) for 3-segment public
 # tags. 4-segment tags (use `make internal_tag`) skip the binary publish.
-release_finish: require_gitflow_next release_preflight
+release_finish: require_gitflow_next release_preflight release_check
 	git flow release finish && git push origin develop && git push origin master && git push --tags && git checkout develop
 	@echo ""
 	@echo "=== Release $(RELEASE_VERSION) tagged and pushed ==="
@@ -226,4 +293,5 @@ things_clean:
 	minor_release patch_release major_release hotfix \
 	release_finish hotfix_finish things_clean \
 	run build build_release app open_app logs clean \
-	setup release_preflight release_all internal_tag
+	setup release_preflight release_all internal_tag \
+	bump release_check

@@ -20,6 +20,12 @@ DerivedData/
 *.swp
 *~.nib
 
+# Stray screenshots dragged into the repo root by mistake. Real screenshots
+# for docs live under docs/images/. The `/` anchor means we only ignore
+# files matching at the repo root, not anywhere under it.
+/Screenshot*.png
+/Screenshot*.jpg
+
 # Build products
 build/
 *.app
