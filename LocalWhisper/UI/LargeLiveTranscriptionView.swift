@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 /// Accessibility-oriented large live-transcription view. Hosted in its
 /// own opaque `NSWindow` so users who can't comfortably read the small
@@ -48,23 +51,51 @@ struct LargeLiveTranscriptionView: View {
         #endif
     }
 
-    // MARK: - Footer (stop button)
+    // MARK: - Footer (Clear · Stop/Record · Copy)
 
-    /// One obvious affordance for ending live mode. Routes through
-    /// `handleLiveHotkey()` so this button and the hotkey share a single
-    /// code path — no second branch to keep in sync, no risk of the two
-    /// drifting. Pause was deliberately omitted: `AudioStreamTranscriber`
-    /// has no native pause, and simulating one would mislead users about
-    /// state (anti-poka-yoke).
+    /// Three affordances. Routing through `handleLiveHotkey()` keeps the
+    /// record/stop button and the global hotkey on a single code path —
+    /// no risk of the two drifting. Pause was deliberately omitted:
+    /// `AudioStreamTranscriber` has no native pause, and simulating one
+    /// would mislead users about state (anti-poka-yoke).
+    ///
+    /// Clear and Copy are essential for notepad mode (mobile-style
+    /// scratchpad on desktop): after stop, the transcript persists for
+    /// review — these buttons let the user act on it without leaving the
+    /// window. They're harmless in auto-paste / clipboard-only modes too;
+    /// gated on whether there's any text to act on.
     private var stopFooter: some View {
-        HStack {
+        HStack(spacing: 12) {
+            // Clear — destroys all transcript text (live + last). Disabled
+            // when nothing's there. This is the ONLY explicit destroy
+            // affordance; Stop preserves.
+            Button {
+                appState.lastTranscription = ""
+                appState.liveTranscriptConfirmed = ""
+                appState.liveTranscriptUnconfirmed = ""
+            } label: {
+                Label("Clear", systemImage: "xmark.circle")
+                    .font(.system(size: appState.liveLargeWindowFontSize * 0.4,
+                                  weight: .regular))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .disabled(!hasAnyTranscript)
+
             Spacer()
+
+            // Stop ⇄ Record — toggles based on session state. In notepad
+            // mode, tapping Record after Stop continues the existing
+            // transcript with a `\n\n` boundary (coordinator handles).
             Button {
                 Task { @MainActor in
                     await appState.coordinator.handleLiveHotkey()
                 }
             } label: {
-                Label("Stop", systemImage: "stop.circle.fill")
+                Label(appState.isLiveActive ? "Stop" : "Record",
+                      systemImage: appState.isLiveActive ? "stop.circle.fill" : "mic.circle.fill")
                     .font(.system(size: appState.liveLargeWindowFontSize * 0.4,
                                   weight: .semibold))
                     .padding(.horizontal, 24)
@@ -72,11 +103,48 @@ struct LargeLiveTranscriptionView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .tint(.red)
-            .disabled(!appState.isLiveActive)
+            .tint(appState.isLiveActive ? .red : .accentColor)
+
             Spacer()
+
+            // Copy — writes the full visible transcript (confirmed +
+            // unconfirmed) to NSPasteboard. The user can then switch to
+            // their target app and paste manually. Disabled if empty.
+            Button {
+                let c = appState.liveTranscriptConfirmed
+                let u = appState.liveTranscriptUnconfirmed
+                let text: String
+                if !c.isEmpty && !u.isEmpty { text = c + " " + u }
+                else if !c.isEmpty { text = c }
+                else if !u.isEmpty { text = u }
+                else { text = appState.lastTranscription }
+                guard !text.isEmpty else { return }
+                #if os(macOS)
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                pb.setString(text, forType: .string)
+                #endif
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+                    .font(.system(size: appState.liveLargeWindowFontSize * 0.4,
+                                  weight: .regular))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .disabled(!hasAnyTranscript)
         }
         .padding(.top, 8)
+    }
+
+    /// True iff there's any displayable transcript to act on (whether
+    /// from this session's in-flight stream, a preserved notepad-mode
+    /// prefix, or a finalized lastTranscription).
+    private var hasAnyTranscript: Bool {
+        !appState.liveTranscriptConfirmed.isEmpty
+            || !appState.liveTranscriptUnconfirmed.isEmpty
+            || !appState.lastTranscription.isEmpty
     }
 
     // MARK: - Header (status + timer)

@@ -175,14 +175,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] active in
                 self?.popover.behavior = active ? .applicationDefined : .transient
-                // Large accessibility window — opens at live-start and
-                // closes at live-stop, gated on the user's preference.
+                // Large transcription window lifecycle. Three modes:
+                //   - notepad: always open it (it IS the surface); never
+                //     auto-hide on stop — Stop preserves, Clear (in-window
+                //     button) is the only destroy affordance.
+                //   - autoPaste / clipboardOnly: respect the opt-in
+                //     `liveLargeWindowEnabled` preference; auto-hide on stop.
+                let notepad = AppState.shared.liveMode == .notepad
                 if active {
-                    if AppState.shared.liveLargeWindowEnabled {
+                    if notepad || AppState.shared.liveLargeWindowEnabled {
                         self?.showLargeLiveWindow()
                     }
                 } else {
-                    self?.hideLargeLiveWindow()
+                    if !notepad {
+                        self?.hideLargeLiveWindow()
+                    }
                 }
             }
             .store(in: &cancellables)

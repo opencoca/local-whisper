@@ -503,9 +503,10 @@ final class TranscriptionCoordinator: ObservableObject {
                 await textInjectionService.copyToClipboard(visibleTranscript)
             }
         case .notepad:
-            // No clipboard, no paste, no popover close. User reviews
-            // in-window and copies manually; next Start continues.
-            break
+            // No clipboard, no paste — but DO close the popover. The large
+            // transcription window is the persistent surface in notepad mode;
+            // the popover would just sit there empty and steal attention.
+            NotificationCenter.default.post(name: .closeLocalWhisperPopover, object: nil)
         }
 
         await resetLiveState()
