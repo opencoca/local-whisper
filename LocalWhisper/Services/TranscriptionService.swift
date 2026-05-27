@@ -38,36 +38,44 @@ actor TranscriptionService {
     /// - openai_whisper-small, openai_whisper-small.en (~460MB, balanced)
     /// - openai_whisper-medium, openai_whisper-medium.en (~1.5GB, good)
     /// - openai_whisper-large-v3, openai_whisper-large-v3_turbo (~3GB, best)
-    func loadModel(modelName: String = "openai_whisper-base") async {
-        guard !isLoading && whisperKit == nil else { 
+    /// Load a Whisper model.
+    /// - Parameter modelFolder: when non-nil, WhisperKit loads the model from
+    ///   this folder instead of downloading from HuggingFace. The iOS app
+    ///   uses this to load `tiny.en` from the bundled app resources so the
+    ///   first launch works fully offline. macOS leaves it nil and accepts
+    ///   the standard download-and-cache flow.
+    func loadModel(modelName: String = "openai_whisper-base", modelFolder: String? = nil) async {
+        guard !isLoading && whisperKit == nil else {
             print("[TranscriptionService] Skipping load - isLoading: \(isLoading), whisperKit exists: \(whisperKit != nil)")
-            return 
+            return
         }
-        
+
         isLoading = true
         progressContinuation.yield(0.0)
-        
+
         let startTime = CFAbsoluteTimeGetCurrent()
-        
+
         // Log proxy settings for debugging
         logProxySettings()
-        
+
         do {
             progressContinuation.yield(0.1)
-            print("[TranscriptionService] ⏳ Loading model: \(modelName)...")
-            
+            print("[TranscriptionService] ⏳ Loading model: \(modelName) (folder: \(modelFolder ?? "<HuggingFace>"))...")
+
             // Initialize WhisperKit with model variant
-            // WhisperKit will download from HuggingFace if not cached
-            // Use verbose mode to see download progress
-            // Note: useBackgroundDownloadSession=false ensures we use the default URLSession
-            // which respects system proxy settings
+            // - With modelFolder set: WhisperKit loads from that local path,
+            //   no network. Used by iOS to load the bundled tiny.en.
+            // - Without modelFolder: WhisperKit downloads from HuggingFace
+            //   if not cached. Used by macOS.
+            let shouldDownload = (modelFolder == nil)
             whisperKit = try await WhisperKit(
                 model: modelName,
+                modelFolder: modelFolder,
                 verbose: true,
                 logLevel: .debug,
                 prewarm: true,
                 load: true,
-                download: true,
+                download: shouldDownload,
                 useBackgroundDownloadSession: false  // Use foreground session for proxy compatibility
             )
             
@@ -172,8 +180,14 @@ actor TranscriptionService {
     
     /// Log message to file for debugging
     private func logToFile(_ message: String) {
+        #if os(macOS)
         let logFile = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/LocalWhisper.log")
+        #else
+        let logFile = FileManager.default
+            .urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("LocalWhisper.log")
+        #endif
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let logMessage = "[\(timestamp)] \(message)\n"
         if let data = logMessage.data(using: .utf8) {

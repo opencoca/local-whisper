@@ -75,6 +75,31 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(autoPasteOnLive, forKey: "autoPasteOnLive") }
     }
 
+    /// What happens on Stop in live mode.
+    /// - `.autoPaste`: clipboard + Cmd+V to the focused app; next Start
+    ///   clears the display (each session is a discrete dictation).
+    /// - `.clipboardOnly`: clipboard write, no paste; next Start clears
+    ///   the display. For paste-blocked apps or when you want to choose
+    ///   where the text lands.
+    /// - `.notepad`: no clipboard write, no paste; next Start CONTINUES
+    ///   from the existing transcript (with a `\n\n` boundary). Mirrors
+    ///   the iOS experience — the popover/large-window becomes a long-form
+    ///   scratchpad. The user copies manually when they're done.
+    ///
+    /// The combination "auto-paste + accumulate" is intentionally absent:
+    /// it would produce duplicates in the target app on every stop. Three
+    /// presets cover the legitimate workflows; a footgun combination
+    /// simply isn't selectable.
+    enum LiveMode: String, CaseIterable {
+        case autoPaste
+        case clipboardOnly
+        case notepad
+    }
+
+    @Published var liveMode: LiveMode {
+        didSet { UserDefaults.standard.set(liveMode.rawValue, forKey: "liveMode") }
+    }
+
     /// How transcribed text reaches the focused app.
     /// - `.paste`: clipboard + synthesized `Cmd+V`. Fast but some apps
     ///   reject programmatic pastes (password fields, certain banking /
@@ -246,6 +271,19 @@ final class AppState: ObservableObject {
 
         self.autoPasteOnHold = UserDefaults.standard.object(forKey: "autoPasteOnHold") as? Bool ?? true
         self.autoPasteOnLive = UserDefaults.standard.object(forKey: "autoPasteOnLive") as? Bool ?? true
+
+        // LiveMode: prefer the explicit setting; otherwise derive from the
+        // legacy `autoPasteOnLive` (true → .autoPaste, false → .clipboardOnly)
+        // so existing users see no behavior change. New users get .autoPaste
+        // by default — same shipped UX.
+        if let raw = UserDefaults.standard.string(forKey: "liveMode"),
+           let m = LiveMode(rawValue: raw) {
+            self.liveMode = m
+        } else if UserDefaults.standard.object(forKey: "autoPasteOnLive") != nil {
+            self.liveMode = (UserDefaults.standard.bool(forKey: "autoPasteOnLive")) ? .autoPaste : .clipboardOnly
+        } else {
+            self.liveMode = .autoPaste
+        }
 
         // Default to .paste so existing users see no change in behavior.
         // .typeCharacters is opt-in for apps that block programmatic paste.

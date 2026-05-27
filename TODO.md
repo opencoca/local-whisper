@@ -20,6 +20,39 @@ This file tracks active work for the LocalWhisper menu bar app.
 
 ## In Progress
 
+- [ ] **LocalWhisper for iPhone — minimal standalone iOS app** #ios #cross-platform
+  - Mobile research concluded iOS standalone is the highest-leverage cross-platform move: WhisperKit is iOS-native, ~60-65% of macOS Swift LOC ports with cosmetic changes, product shape is "open → dictate → live transcript → copy → swap apps → paste." Differentiation = AGPL + 100% offline + same-app-as-desktop. Plan at `~/.claude/plans/we-need-to-get-smooth-anchor.md`.
+  - **Architecture**: same repo; new `LocalWhisperMobile.xcodeproj` alongside `Package.swift`; new `LocalWhisper/Mobile/` folder for iOS-only code; `#if os(macOS)` guards in the 2-3 shared files with macOS-isms; macOS Package.swift target excludes `Mobile/`.
+  - **Step 1**: Guard shared files cross-platform
+    - [ ] `TranscriptionService.swift:175-189` — wrap `~/Library/Logs/LocalWhisper.log` in `#if os(macOS)` / use `URL.cachesDirectory` on iOS
+    - [ ] `LargeLiveTranscriptionView.swift:44` — guard `Color(nsColor: .windowBackgroundColor)` / use `Color(uiColor: .systemBackground)` on iOS
+    - [ ] `AudioCaptureService.swift` — add `#if os(iOS)` branch for `AVAudioSession.setCategory(.record, mode: .measurement)` + `setActive(true)` before `engine.start()`
+    - [ ] `make app` clean — macOS build regression check
+  - **Step 2**: Bundle `openai_whisper-tiny.en` (~75 MB, four `.mlmodelc` files) into `LocalWhisper/Mobile/Resources/Models/` from `argmaxinc/whisperkit-coreml` HuggingFace repo
+  - **Step 3**: Create iOS-only files in `LocalWhisper/Mobile/`
+    - [ ] `LocalWhisperMobileApp.swift` — `@main` App + WindowGroup + MobileAppState
+    - [ ] `ContentView.swift` — Tap-to-Record button + LargeLiveTranscriptionView + Copy/Clear buttons + toast
+    - [ ] `MobileAppState.swift` — stripped AppState (model/live/vocabulary/font; drop hotkey + OutputMethod + proxy + mute + accessibility)
+    - [ ] `MobileCoordinator.swift` — stripped TranscriptionCoordinator (live path only; no TextInjection, no NSRunningApplication)
+    - [ ] `MobilePermissionsService.swift` — `AVAudioApplication.requestRecordPermission` only
+    - [ ] `SettingsView.swift` — Model section (bundled + downloadable: base / small / large-v3-turbo via `WhisperKit.download`) + Live transcription (font slider, contrast) + About
+    - [ ] `Info.plist` — `NSMicrophoneUsageDescription`, supported orientations, no background audio mode
+  - **Step 4**: `LocalWhisperMobile.xcodeproj` at repo root — reference (not copy) shared files in `LocalWhisper/{Services,Models,UI}/` + include `LocalWhisper/Mobile/*.swift`; iOS 16.4 deployment target; WhisperKit via local SPM
+  - **Step 5**: `Package.swift` — add `exclude: ["LocalWhisper.entitlements", "Mobile"]`
+  - **Step 6**: Rebrand + ship
+    - [ ] Lock final name: "Sage.is Talk", "Sage.is Talking", or other Sage.is variant
+    - [ ] Rename Xcode target + `CFBundleDisplayName` + bundle ID (e.g. `is.sage.talk`); refresh App Icon if needed
+    - [ ] Confirm Apple Developer Program account (opencoca / Sage.is); $99/yr if not paid
+    - [ ] Archive → upload via App Store Connect → submit for internal TestFlight review
+  - **Verification**:
+    - [ ] `make app` macOS still builds clean (regression check after Step 1)
+    - [ ] iPhone 15 simulator: app launches, ContentView renders, mic-denied state handled
+    - [ ] Physical device: tiny.en transcribes in <1s, transcript styled identically to macOS
+    - [ ] Copy round-trip: Copy → Notes → long-press paste → text appears verbatim
+    - [ ] Settings → Download base.en → progress UI → model switches → re-transcribe shows accuracy bump
+    - [ ] TestFlight upload completes; appears in App Store Connect within ~30 min
+  - Effort: 5-7 focused evenings to TestFlight. Time-eaters: Apple Dev account setup (~1 eve if not paid), Xcode signing gremlins (~2-3 hrs), TestFlight review wall-clock (24-48h, not work time).
+
 - [ ] **Big modal polish + type-don't-paste output method** #ux #accessibility
   - [x] `AppState`: persisted fields (`liveLargeWindowEnabled`, `liveLargeWindowFontSize`, `liveLargeWindowHighContrast`, `liveLargeWindowFloating`)
   - [x] `LargeLiveTranscriptionView.swift` (NEW) — opaque, large-font transcript with confirmed/unconfirmed weight contrast + auto-scroll
@@ -115,6 +148,28 @@ heading by area (Services, UI, Coordinators, etc.)._
 - [ ] **Model management UX**: First-use model download
   - [ ] Surface download progress more clearly in the menu bar UI
   - [ ] Handle proxy / offline cases beyond the current `useBackgroundDownloadSession: false` workaround
+
+- [ ] **macOS rebrand to Sage.is name (1.2.0)** #brand #cross-platform
+  - Triggered by the iOS launch under a Sage.is brand (see In Progress card). Once the iOS name is locked, the macOS app should follow in a 1.2.0 release so users on both platforms see one brand. Don't rename macOS until the iOS name has been used in TestFlight enough to confirm it sticks.
+  - [ ] Rename Xcode/SPM target: `LocalWhisper` → final Sage.is name
+  - [ ] `CFBundleDisplayName` + `CFBundleName` in macOS Info.plist
+  - [ ] Bundle ID: keep `com.localwhisper.app` for TCC continuity OR migrate to `is.sage.talk` (TCC re-grant cost — flag in release notes either way)
+  - [ ] `README.md` — title, install command, screenshots
+  - [ ] `homebrew-apps/Casks/local-whisper.rb` → new cask name; deprecate the old cask name with a `caveats` pointing at the new one for ~2 releases
+  - [ ] Repo description on GitHub + topics
+  - [ ] Possible repo rename (`local-whisper` → `sage-talk` etc.) — separate decision, breaks links so save for last
+  - [ ] `CHANGELOG.md` — 1.2.0 entry framing it as a rename, not a feature change
+  - [ ] Update `CLAUDE.md` references where appropriate
+  - 1-2 evenings of mechanical work; coordinate with iOS App Store listing copy for brand consistency
+
+- [ ] **Funding / sponsorship options** #community #infra
+  - LocalWhisper is AGPL-3.0 and 100% offline — no paid SaaS hook. Give people who want to support the project a way to.
+  - [ ] Decide between (or combine): **GitHub Sponsors** (native button on the repo page, recurring), **Buy Me a Coffee** (one-shot tips, lower friction), **Ko-fi** (similar to BMC), **Open Collective** (transparent / fiscal-hosted), **Patreon** (recurring patronage, heavier audience overhead). Default recommendation: GitHub Sponsors + Buy Me a Coffee for both audiences.
+  - [ ] Create `.github/FUNDING.yml` once the platforms are chosen — surfaces the sponsor button on every repo page + PR / issue sidebars (this is the lowest-effort, highest-visibility win)
+  - [ ] Add a "Support" or "Sponsor" section near the bottom of `README.md` linking to the chosen platforms
+  - [ ] Optional: in-app menu item "Buy me a coffee ☕" (or "Sponsor on GitHub ♥") in the menu-bar popover footer — only worth doing if there's an existing kebab/overflow menu so it doesn't clutter the primary UI
+  - [ ] If GitHub Sponsors gets used, set up the sponsor profile (intro pitch, suggested tiers, what tier funds what)
+  - [ ] Consider whether contributions should route to `opencoca`, `Sage-is`, or `alexander-somma` — pick before publishing or you'll have to migrate
 
 ## Bugs
 

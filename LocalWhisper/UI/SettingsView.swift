@@ -486,14 +486,33 @@ struct ShortcutSettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    Toggle("Auto-paste into target app after stop", isOn: $appState.autoPasteOnLive)
-                        .toggleStyle(.switch)
-                        .padding(.top, 4)
-                    Text(appState.autoPasteOnLive
-                         ? "On stop, the app you were in becomes frontmost again and the transcript is pasted via Cmd+V."
-                         : "Transcript lands on the clipboard only; activate your target app and paste manually.")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Mode")
+                            .font(.subheadline.weight(.medium))
+                        Picker("Live mode", selection: $appState.liveMode) {
+                            Text("Auto-paste").tag(AppState.LiveMode.autoPaste)
+                            Text("Clipboard only").tag(AppState.LiveMode.clipboardOnly)
+                            Text("Notepad").tag(AppState.LiveMode.notepad)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+
+                        // Caption updates per mode so the chosen workflow's
+                        // semantics are obvious without trial-and-error.
+                        Text({
+                            switch appState.liveMode {
+                            case .autoPaste:
+                                return "On stop, the app you were in becomes frontmost again and the transcript is pasted via Cmd+V. Each session is its own paste."
+                            case .clipboardOnly:
+                                return "On stop, the transcript lands on the clipboard only — paste it manually wherever you choose. Each session is its own clipboard write."
+                            case .notepad:
+                                return "On stop, nothing leaves the app — review the transcript here. Tapping record again continues with a paragraph break. Use Clear to start fresh."
+                            }
+                        }())
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    }
+                    .padding(.top, 4)
                 }
                 
                 // Output method — applies to both hold and live modes.

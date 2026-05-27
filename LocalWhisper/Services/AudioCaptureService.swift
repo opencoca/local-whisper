@@ -18,9 +18,17 @@ actor AudioCaptureService {
         guard !isCurrentlyRecording else {
             throw AudioCaptureError.alreadyRecording
         }
-        
+
         audioBuffers.removeAll()
-        
+
+        #if os(iOS)
+        // iOS requires an explicit AVAudioSession category before the engine
+        // can capture from the mic. macOS has no equivalent — AVAudioEngine
+        // talks to the input device directly.
+        try AVAudioSession.sharedInstance().setCategory(.record, mode: .measurement)
+        try AVAudioSession.sharedInstance().setActive(true)
+        #endif
+
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)

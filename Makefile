@@ -99,6 +99,79 @@ clean:
 	swift package clean
 	rm -rf dist .build
 
+# --- iOS / iPadOS ---------------------------------------------------------
+#
+# `make ios` is the umbrella entry point: downloads the bundled tiny.en
+# Whisper model and generates LocalWhisperMobile.xcodeproj via XcodeGen.
+# Both sub-targets are idempotent — safe to re-run any time.
+#
+# Open the generated project in Xcode for signing/scheme/run.
+
+ios: ios_models ios_xcode
+	@echo ""
+	@echo "  📱 iOS setup complete"
+	@echo "  Next: open LocalWhisperMobile.xcodeproj"
+
+# Download openai_whisper-tiny.en (~75 MB) into Mobile/Resources/Models/.
+# Uses HuggingFace CLI; idempotent (no-op if folder already populated).
+# The model files are gitignored — each contributor downloads on their own box.
+ios_models:
+	@echo "→ Checking for bundled Whisper model..."
+	@if test -d LocalWhisper/Mobile/Resources/Models/openai_whisper-tiny.en && \
+	    test -n "$$(ls -A LocalWhisper/Mobile/Resources/Models/openai_whisper-tiny.en 2>/dev/null)"; then \
+		echo "  ⏭  openai_whisper-tiny.en already present"; \
+	else \
+		mkdir -p LocalWhisper/Mobile/Resources/Models; \
+		echo "→ Downloading openai_whisper-tiny.en from HuggingFace..."; \
+		if command -v uvx >/dev/null 2>&1; then \
+			uvx --from huggingface_hub hf download \
+				argmaxinc/whisperkit-coreml \
+				--include "openai_whisper-tiny.en/*" \
+				--local-dir LocalWhisper/Mobile/Resources/Models; \
+		elif command -v hf >/dev/null 2>&1; then \
+			hf download argmaxinc/whisperkit-coreml \
+				--include "openai_whisper-tiny.en/*" \
+				--local-dir LocalWhisper/Mobile/Resources/Models; \
+		else \
+			echo "❌ Need uv (preferred) or huggingface_hub installed."; \
+			echo "   Install uv:  brew install uv  (or  curl -LsSf https://astral.sh/uv/install.sh | sh)"; \
+			echo "   Then retry:  make ios_models"; \
+			exit 1; \
+		fi; \
+		test -d LocalWhisper/Mobile/Resources/Models/openai_whisper-tiny.en || { \
+			echo "❌ Download finished but openai_whisper-tiny.en/ is missing — check the output above"; \
+			exit 1; \
+		}; \
+		echo "→ Stripping .mlpackage source + .cache (Xcode would double-compile .mlmodelc + .mlpackage)..."; \
+		rm -rf LocalWhisper/Mobile/Resources/Models/.cache/; \
+		rm -rf LocalWhisper/Mobile/Resources/Models/openai_whisper-tiny.en/*.mlpackage/; \
+		echo "  ✅ openai_whisper-tiny.en downloaded ($$(du -sh LocalWhisper/Mobile/Resources/Models/openai_whisper-tiny.en | awk '{print $$1}'))"; \
+	fi
+
+# Generate LocalWhisperMobile.xcodeproj from project.yml. Source of truth is
+# project.yml (tracked in git); the .xcodeproj is gitignored and regenerated.
+# This means contributors never fight over .pbxproj merge conflicts.
+ios_xcode:
+	@command -v xcodegen >/dev/null 2>&1 || { \
+		echo "❌ xcodegen missing — install with: brew install xcodegen"; \
+		exit 1; \
+	}
+	@echo "→ Generating LocalWhisperMobile.xcodeproj..."
+	@xcodegen generate --spec project.yml --quiet
+	@echo "  ✅ LocalWhisperMobile.xcodeproj generated"
+
+# Compile the iOS scheme against the iPhone 15 simulator. Smoke test that
+# the Xcode project + Mobile/ files + shared Services all compile together.
+# Does NOT run on a device.
+ios_build: ios_xcode
+	@echo "→ Building iOS scheme for iPhone 15 simulator..."
+	@xcodebuild -project LocalWhisperMobile.xcodeproj \
+		-scheme LocalWhisperMobile \
+		-destination 'platform=iOS Simulator,name=iPhone 15' \
+		-quiet build
+
+# --- end iOS --------------------------------------------------------------
+
 # Path to the brew tap repo (relative to PROJECTPATH). Override with TAP_PATH=...
 TAP_PATH ?= ../homebrew-apps
 

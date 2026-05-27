@@ -358,8 +358,28 @@ final class TranscriptionCoordinator: ObservableObject {
         }
         logger.info("Live target app: \(self.liveTargetApp?.localizedName ?? "<none>")")
 
+        // Notepad mode preserves prior text across stop/start (mobile-style
+        // scratchpad). Other modes are discrete — each session is a fresh slate.
+        let priorText: String
+        if appState.liveMode == .notepad {
+            let oldC = appState.liveTranscriptConfirmed
+            let oldU = appState.liveTranscriptUnconfirmed
+            if oldC.isEmpty && oldU.isEmpty {
+                priorText = ""
+            } else if oldC.isEmpty {
+                priorText = oldU
+            } else if oldU.isEmpty {
+                priorText = oldC
+            } else {
+                priorText = oldC + " " + oldU
+            }
+        } else {
+            priorText = ""
+        }
+        let sessionPrefix = priorText.isEmpty ? "" : priorText + "\n\n"
+
         appState.errorMessage = nil
-        appState.liveTranscriptConfirmed = ""
+        appState.liveTranscriptConfirmed = priorText
         appState.liveTranscriptUnconfirmed = ""
         appState.transcriptionStartedAt = Date()
         appState.isLiveActive = true
@@ -383,7 +403,10 @@ final class TranscriptionCoordinator: ObservableObject {
                 requiredSegmentsForConfirmation: appState.liveRequiredConfirmationSegments,
                 onUpdate: { [weak self] confirmed, unconfirmed in
                     guard let appState = self?.appState else { return }
-                    appState.liveTranscriptConfirmed = confirmed
+                    // Prepend the preserved prefix so the view sees one
+                    // continuous transcript across pause/resume cycles
+                    // (notepad mode). Other modes use empty prefix.
+                    appState.liveTranscriptConfirmed = sessionPrefix + confirmed
                     appState.liveTranscriptUnconfirmed = unconfirmed
                 }
             )
@@ -394,10 +417,16 @@ final class TranscriptionCoordinator: ObservableObject {
         }
     }
 
-    /// Stop the live stream, optionally write a .txt sibling, then refocus
-    /// the captured target app and paste the final transcript.
+    /// Stop the live stream. Behavior branches on `appState.liveMode`:
+    ///   - `.autoPaste` (default): popover closes, target app refocused,
+    ///     transcript pasted via Cmd+V or typed.
+    ///   - `.clipboardOnly`: popover closes, transcript written to clipboard
+    ///     only; user pastes manually wherever they choose.
+    ///   - `.notepad`: no clipboard, no paste, popover stays open. Transcript
+    ///     persists for review; the next Start continues with a `\n\n`
+    ///     boundary. Mobile-style scratchpad on desktop.
     func stopLive() async {
-        logger.info("stopLive called")
+        logger.info("stopLive called (mode: \(self.appState?.liveMode.rawValue ?? "<nil>"))")
 
         guard let appState = appState,
               let liveTranscriptionService = liveTranscriptionService,
@@ -406,72 +435,91 @@ final class TranscriptionCoordinator: ObservableObject {
             return
         }
 
-        let finalText = await liveTranscriptionService.stop()
-        logger.info("Live final text: \(finalText)")
+        _ = await liveTranscriptionService.stop()
 
-        // Briefly show .transcribing so the icon doesn't pop straight back
-        // to .idle (covers the focus-restore + paste window).
         appState.transcriptionState = .transcribing
 
-        // Close the popover before refocusing the target app — leaving it
-        // open would steal Cmd+V.
-        NotificationCenter.default.post(name: .closeLocalWhisperPopover, object: nil)
+        // The user-visible transcript = whatever's currently on screen,
+        // including any preserved prefix in notepad mode. We use this for
+        // both lastTranscription and the .txt sibling so they match what
+        // the user sees.
+        let visibleTranscript: String = {
+            let c = appState.liveTranscriptConfirmed
+            let u = appState.liveTranscriptUnconfirmed
+            if c.isEmpty && u.isEmpty { return "" }
+            if c.isEmpty { return u }
+            if u.isEmpty { return c }
+            return c + " " + u
+        }()
 
         // Optional: write the transcript out as a timestamped .txt.
-        if appState.liveWriteTxtSibling, !finalText.isEmpty {
+        if appState.liveWriteTxtSibling, !visibleTranscript.isEmpty {
             let stamp = ISO8601DateFormatter().string(from: Date())
                 .replacingOccurrences(of: ":", with: "-")
             let outURL = appState.liveTxtFolder.appendingPathComponent("live-\(stamp).txt")
             do {
-                // Ensure the folder still exists (user may have deleted it).
                 try FileManager.default.createDirectory(at: appState.liveTxtFolder,
                                                        withIntermediateDirectories: true)
-                try finalText.write(to: outURL, atomically: true, encoding: .utf8)
+                try visibleTranscript.write(to: outURL, atomically: true, encoding: .utf8)
                 logger.info("Wrote live transcript to \(outURL.path)")
             } catch {
                 logger.error("Failed to write live transcript: \(error.localizedDescription)")
             }
         }
 
-        if !finalText.isEmpty {
-            appState.lastTranscription = finalText
+        if !visibleTranscript.isEmpty {
+            appState.lastTranscription = visibleTranscript
+        }
 
-            // Refocus the captured target app so the text lands where the
-            // user was working, not on our just-closed popover. (Skip if
-            // the user invoked live mode from the popover button — no
-            // distinct target was captured.)
-            if let target = liveTargetApp {
-                target.activate()
-                try? await Task.sleep(nanoseconds: 100_000_000)
-            }
-
-            // Output dispatch parallels the hold-mode path:
-            //   - .typeCharacters → universal but slow; wins over auto-paste.
-            //   - .paste + autoPasteOnLive = true → clipboard + Cmd+V.
-            //   - .paste + autoPasteOnLive = false (or no target) → clipboard only.
-            switch appState.outputMethod {
-            case .typeCharacters:
-                await textInjectionService.typeText(finalText)
-            case .paste:
-                if appState.autoPasteOnLive, liveTargetApp != nil {
-                    try? await textInjectionService.injectText(
-                        finalText,
-                        useClipboardFallback: appState.useClipboardFallback
-                    )
-                } else {
-                    await textInjectionService.copyToClipboard(finalText)
+        // Mode dispatch — only autoPaste / clipboardOnly touch the
+        // clipboard or target app. Notepad is purely on-screen.
+        switch appState.liveMode {
+        case .autoPaste:
+            // Close popover before refocusing target — leaving it open
+            // would steal Cmd+V.
+            NotificationCenter.default.post(name: .closeLocalWhisperPopover, object: nil)
+            if !visibleTranscript.isEmpty {
+                if let target = liveTargetApp {
+                    target.activate()
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+                switch appState.outputMethod {
+                case .typeCharacters:
+                    await textInjectionService.typeText(visibleTranscript)
+                case .paste:
+                    if liveTargetApp != nil {
+                        try? await textInjectionService.injectText(
+                            visibleTranscript,
+                            useClipboardFallback: appState.useClipboardFallback
+                        )
+                    } else {
+                        await textInjectionService.copyToClipboard(visibleTranscript)
+                    }
                 }
             }
+        case .clipboardOnly:
+            NotificationCenter.default.post(name: .closeLocalWhisperPopover, object: nil)
+            if !visibleTranscript.isEmpty {
+                await textInjectionService.copyToClipboard(visibleTranscript)
+            }
+        case .notepad:
+            // No clipboard, no paste, no popover close. User reviews
+            // in-window and copies manually; next Start continues.
+            break
         }
 
         await resetLiveState()
     }
 
-    /// Tear down the live UI fields and target-app handle. Always called
-    /// once at the end of stopLive (success or skip-paste).
+    /// Tear down session state. In notepad mode, preserve the displayed
+    /// transcript (Stop only stops, Clear only clears). Other modes clear
+    /// it as part of the per-session discrete-paste flow.
     private func resetLiveState() async {
-        appState?.liveTranscriptConfirmed = ""
-        appState?.liveTranscriptUnconfirmed = ""
+        let mode = appState?.liveMode ?? .autoPaste
+        if mode != .notepad {
+            appState?.liveTranscriptConfirmed = ""
+            appState?.liveTranscriptUnconfirmed = ""
+        }
         appState?.transcriptionStartedAt = nil
         appState?.isLiveActive = false
         appState?.transcriptionState = .idle
