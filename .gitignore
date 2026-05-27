@@ -36,3 +36,8 @@ dist/
 .idea/
 *.code-workspace
 .vscode/
+
+# iOS bundled Whisper model files — downloaded by `make ios_models` from
+# HuggingFace argmaxinc/whisperkit-coreml. Per-contributor, not in git.
+# The folder itself (with .gitkeep) is tracked; the .mlmodelc subfolders aren't.
+LocalWhisper/Mobile/Resources/Models/openai_whisper-*/
