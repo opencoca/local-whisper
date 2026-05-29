@@ -19,15 +19,33 @@ struct LargeLiveTranscriptionView: View {
     /// race with each other's auto-dismiss timers.
     @State private var clearToken: UUID = UUID()
 
+    // MARK: - Display mode (v1.2.0)
+    //
+    // The large window started life as the live-transcription surface,
+    // but in v1.2.0 it doubles as the read-along view for TTS
+    // playback. `displayMode` decides which content / footer to render
+    // — never both, since a live capture and a TTS playback can't run
+    // simultaneously (the speak hotkey is blocked while liveActive,
+    // and vice versa).
+    private enum DisplayMode {
+        case liveTranscription
+        case readAlong
+    }
+
+    private var displayMode: DisplayMode {
+        appState.speakState.isActive ? .readAlong : .liveTranscription
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             statusHeader
 
             // Transcript fills the rest. ScrollView with bottom-anchored
-            // content keeps the latest text visible as it streams in.
+            // content keeps the latest text visible as it streams in
+            // (live mode) or the highlighted word visible (read-along).
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text(attributedTranscript)
+                    Text(transcriptContent)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .id("transcript-bottom")
@@ -42,9 +60,16 @@ struct LargeLiveTranscriptionView: View {
                         proxy.scrollTo("transcript-bottom", anchor: .bottom)
                     }
                 }
+                .onChange(of: appState.readAlongRange) {
+                    // For read-along, follow the highlight so the
+                    // current word stays in view.
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                    }
+                }
             }
 
-            stopFooter
+            footer
         }
         .padding(.horizontal, 60)
         .padding(.vertical, 40)
@@ -68,7 +93,61 @@ struct LargeLiveTranscriptionView: View {
         }
     }
 
-    // MARK: - Footer (Clear · Stop/Record · Copy)
+    // MARK: - Footer (mode-aware)
+
+    @ViewBuilder
+    private var footer: some View {
+        switch displayMode {
+        case .liveTranscription:
+            stopFooter
+        case .readAlong:
+            readAlongFooter
+        }
+    }
+
+    /// Read-along mode controls: Pause / Resume / Stop. Save Audio is
+    /// available from the popover's SpeakPanel — keeping it off the
+    /// large window keeps the footer single-purpose for playback
+    /// control while text is being read.
+    private var readAlongFooter: some View {
+        HStack(spacing: 12) {
+            if case .paused = appState.speakState {
+                Button {
+                    Task { await appState.coordinator.resumeSpeak() }
+                } label: {
+                    Label("Resume", systemImage: "play.fill")
+                        .font(.system(size: appState.liveLargeWindowFontSize * 0.35))
+                        .padding(.horizontal, 8)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            } else {
+                Button {
+                    Task { await appState.coordinator.pauseSpeak() }
+                } label: {
+                    Label("Pause", systemImage: "pause.fill")
+                        .font(.system(size: appState.liveLargeWindowFontSize * 0.35))
+                        .padding(.horizontal, 8)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+            }
+
+            Spacer()
+
+            Button(role: .destructive) {
+                Task { await appState.coordinator.stopSpeak() }
+            } label: {
+                Label("Stop", systemImage: "stop.fill")
+                    .font(.system(size: appState.liveLargeWindowFontSize * 0.35))
+                    .padding(.horizontal, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .keyboardShortcut(.escape, modifiers: [])
+        }
+        .padding(.top, 16)
+    }
 
     /// Three affordances. Routing through `handleLiveHotkey()` keeps the
     /// record/stop button and the global hotkey on a single code path —
@@ -224,31 +303,41 @@ struct LargeLiveTranscriptionView: View {
 
     private var statusHeaderRow: some View {
         HStack(spacing: 12) {
-            if appState.isLiveActive {
-                // Spinner is intentionally muted — the red "Live" label
-                // already carries the active-state signal; the spinner
-                // is supplementary and shouldn't compete with the
-                // streaming text for attention.
-                ProgressView()
-                    .progressViewStyle(.circular)
-                    .controlSize(.regular)
-                    .opacity(0.45)
-                Text("Live")
-                    .font(.system(size: appState.liveLargeWindowFontSize * 0.45, weight: .semibold))
-                    .foregroundColor(.red)
-            } else {
-                Image(systemName: "stop.circle.fill")
+            switch displayMode {
+            case .readAlong:
+                Image(systemName: "speaker.wave.2.fill")
                     .font(.system(size: appState.liveLargeWindowFontSize * 0.5))
-                    .foregroundColor(.secondary)
-                Text("Stopped")
-                    .font(.system(size: appState.liveLargeWindowFontSize * 0.45, weight: .regular))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.blue)
+                Text(readAlongHeaderLabel)
+                    .font(.system(size: appState.liveLargeWindowFontSize * 0.45, weight: .semibold))
+                    .foregroundColor(.blue)
+            case .liveTranscription:
+                if appState.isLiveActive {
+                    // Spinner is intentionally muted — the red "Live"
+                    // label already carries the active-state signal.
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .controlSize(.regular)
+                        .opacity(0.45)
+                    Text("Live")
+                        .font(.system(size: appState.liveLargeWindowFontSize * 0.45, weight: .semibold))
+                        .foregroundColor(.red)
+                } else {
+                    Image(systemName: "stop.circle.fill")
+                        .font(.system(size: appState.liveLargeWindowFontSize * 0.5))
+                        .foregroundColor(.secondary)
+                    Text("Stopped")
+                        .font(.system(size: appState.liveLargeWindowFontSize * 0.45, weight: .regular))
+                        .foregroundColor(.secondary)
+                }
             }
 
             // Current toggle hotkey — macOS only. Helps users rediscover
             // the trigger after the popover closes (notepad mode).
             #if os(macOS)
-            let hk = HotkeyManager.shared.liveShortcutString
+            let hk = displayMode == .readAlong
+                ? HotkeyManager.shared.speakShortcutString
+                : HotkeyManager.shared.liveShortcutString
             if !hk.isEmpty {
                 Text(hk)
                     .font(.system(size: appState.liveLargeWindowFontSize * 0.32,
@@ -263,20 +352,94 @@ struct LargeLiveTranscriptionView: View {
 
             Spacer()
 
-            if let startedAt = appState.transcriptionStartedAt {
-                Text(timerInterval: startedAt...Date.distantFuture,
-                     pauseTime: nil,
-                     countsDown: false,
-                     showsHours: true)
-                    .font(.system(size: appState.liveLargeWindowFontSize * 0.45,
-                                  weight: .regular,
-                                  design: .monospaced))
-                    .foregroundColor(.secondary)
+            // Live mode: elapsed-time counter. Read-along: progress
+            // percentage (from the speakState).
+            switch displayMode {
+            case .liveTranscription:
+                if let startedAt = appState.transcriptionStartedAt {
+                    Text(timerInterval: startedAt...Date.distantFuture,
+                         pauseTime: nil,
+                         countsDown: false,
+                         showsHours: true)
+                        .font(.system(size: appState.liveLargeWindowFontSize * 0.45,
+                                      weight: .regular,
+                                      design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+            case .readAlong:
+                if case .speaking(let progress) = appState.speakState {
+                    Text("\(Int(progress * 100))%")
+                        .font(.system(size: appState.liveLargeWindowFontSize * 0.45,
+                                      weight: .regular,
+                                      design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
             }
         }
     }
 
+    /// Header label for read-along: "Read-along" by default, or
+    /// "Read-along · Paused" when paused.
+    private var readAlongHeaderLabel: String {
+        if case .paused = appState.speakState {
+            return "Read-along · Paused"
+        }
+        return "Read-along"
+    }
+
     // MARK: - Transcript
+
+    /// Mode-aware content. In live mode, the two-segment attributed
+    /// transcript (confirmed + unconfirmed tail). In read-along mode,
+    /// the full source text with the current word range tinted.
+    private var transcriptContent: AttributedString {
+        switch displayMode {
+        case .liveTranscription:
+            return attributedTranscript
+        case .readAlong:
+            return attributedReadAlong
+        }
+    }
+
+    /// Read-along rendering: full source text + a colored background
+    /// on the active word range from `appState.readAlongRange`. SwiftUI
+    /// re-renders only the styled run when the range changes, so per-
+    /// word updates are cheap.
+    private var attributedReadAlong: AttributedString {
+        let size = CGFloat(appState.liveLargeWindowFontSize)
+        let highContrast = appState.liveLargeWindowHighContrast
+
+        let text = appState.readAlongText
+        if text.isEmpty {
+            var hint = AttributedString("Preparing…")
+            hint.font = .system(size: size, weight: .regular)
+            hint.foregroundColor = Color.secondary.opacity(0.6)
+            return hint
+        }
+
+        var s = AttributedString(text)
+        s.font = .system(size: size, weight: highContrast ? .semibold : .regular)
+        s.foregroundColor = .primary
+
+        // Apply the highlight to the current word range. AVSpeech
+        // delivers NSRange against the utterance's UTF-16 view, which
+        // is exactly what NSString uses — we convert into AttributedString
+        // indices via the underlying NSString length count.
+        if let range = appState.readAlongRange,
+           range.location >= 0,
+           range.length > 0,
+           let s16start = String.Index(utf16Offset: range.location, in: text) as String.Index?,
+           let s16end = String.Index(utf16Offset: range.location + range.length, in: text) as String.Index?,
+           s16start < text.endIndex, s16end <= text.endIndex,
+           let lower = AttributedString.Index(s16start, within: s),
+           let upper = AttributedString.Index(s16end, within: s) {
+            let highlightRange = lower..<upper
+            s[highlightRange].backgroundColor = Color.yellow.opacity(0.35)
+            s[highlightRange].foregroundColor = .primary
+        }
+
+        return s
+    }
 
     /// Two-segment attributed string: confirmed (settled) text + the
     /// unconfirmed tail still being revised. In high-contrast mode the

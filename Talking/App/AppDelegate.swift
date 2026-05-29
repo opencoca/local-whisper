@@ -109,6 +109,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: .closeTalkingPopover,
             object: nil
         )
+
+        // v1.2.0: when the speak lane starts and the user has opted into
+        // the read-along window, the coordinator posts this to surface
+        // the same `largeLiveWindow` LargeLiveTranscriptionView already
+        // owns. The view switches its content/footer based on speakState.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleOpenLargeWindow),
+            name: .openTalkingLargeWindow,
+            object: nil
+        )
+    }
+
+    @objc private func handleOpenLargeWindow() {
+        showLargeLiveWindow()
     }
 
     @objc private func handleClosePopover() {
