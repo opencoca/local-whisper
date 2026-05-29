@@ -185,6 +185,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if active {
                     if notepad || AppState.shared.liveLargeWindowEnabled {
                         self?.showLargeLiveWindow()
+                        // Two surfaces showing the same state is noise.
+                        // When the large window opens, dismiss the popover —
+                        // the user looks at one place during a live session.
+                        if self?.popover.isShown == true {
+                            self?.popover.performClose(nil)
+                        }
                     }
                 } else {
                     if !notepad {

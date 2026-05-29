@@ -43,9 +43,12 @@ struct MobileLiveTranscriptionView: View {
     private var statusHeader: some View {
         HStack(spacing: 10) {
             if appState.isLiveActive {
+                // Muted spinner — the red "Live" label is the primary cue;
+                // the spinner just supplements it (less visual noise).
                 ProgressView()
                     .progressViewStyle(.circular)
                     .controlSize(.small)
+                    .opacity(0.45)
                 Text("Live")
                     .font(.system(size: appState.liveLargeWindowFontSize * 0.45, weight: .semibold))
                     .foregroundColor(.red)
@@ -98,9 +101,19 @@ struct MobileLiveTranscriptionView: View {
 
         if appState.liveTranscriptConfirmed.isEmpty
             && appState.liveTranscriptUnconfirmed.isEmpty {
-            var hint = AttributedString(
-                appState.isLiveActive ? "Speak now…" : "Tap the mic to start"
-            )
+            // Three-state hint: loading the model, idle ready-to-record,
+            // or recording. The loading state matches the disabled record
+            // button so the user knows nothing's broken — first-launch
+            // model warmup just takes a few seconds.
+            let text: String
+            if !appState.isModelLoaded {
+                text = "Loading model… first launch takes a few seconds"
+            } else if appState.isLiveActive {
+                text = "Speak now…"
+            } else {
+                text = "Tap the mic to start"
+            }
+            var hint = AttributedString(text)
             hint.font = .system(size: size, weight: .regular)
             hint.foregroundColor = Color.secondary.opacity(0.6)
             return hint

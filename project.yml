@@ -75,9 +75,22 @@ targets:
 
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.localwhisper.app
+        # Personal Team can't claim `com.localwhisper.app` (already
+        # registered to another team on Apple's portal). Using an
+        # alexandersomma-owned namespace for dev testing. When we
+        # rebrand to Sage.is and move to a paid Developer Program,
+        # this becomes the final bundle ID (e.g. `is.sage.talk`).
+        PRODUCT_BUNDLE_IDENTIFIER: com.alexandersomma.localwhisper
         MARKETING_VERSION: "1.1.0"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"   # iPhone + iPad
         SWIFT_VERSION: "5.9"
         ENABLE_PREVIEWS: "YES"
+        # Apple Development team — Alexander Somma's Personal Team.
+        # Free Apple ID provisioning: 7-day re-sign cycle, max 3 dev apps
+        # per device, no TestFlight. Sufficient for direct-install testing.
+        # Each contributor will need to override this with their own team
+        # OR have access to a paid Developer Program account once we move
+        # to TestFlight.
+        DEVELOPMENT_TEAM: AV8MCSV43Z
+        CODE_SIGN_STYLE: Automatic

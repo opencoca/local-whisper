@@ -9,7 +9,7 @@ private let injectionLogger = Logger(subsystem: "com.localwispr.app", category: 
 actor TextInjectionService {
     
     /// Inject text - copies to clipboard and auto-pastes
-    func injectText(_ text: String, useClipboardFallback: Bool = true) async throws {
+    func injectText(_ text: String) async throws {
         injectionLogger.info("Injecting text: \(text.prefix(50))...")
         
         // Step 1: Copy to clipboard

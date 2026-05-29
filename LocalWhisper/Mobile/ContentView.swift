@@ -99,18 +99,46 @@ struct ContentView: View {
             Task { await appState.coordinator.handleLiveHotkey() }
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: appState.isLiveActive ? "stop.circle.fill" : "mic.circle.fill")
-                    .font(.system(size: 36))
-                Text(appState.isLiveActive ? "Stop" : "Tap to Record")
-                    .font(.title2)
-                    .fontWeight(.semibold)
+                // Three states: model-loading / idle / recording. The
+                // loading state shows a spinner instead of an icon and
+                // disables the button — much better than the silent
+                // "Model not loaded yet. Please wait…" error toast that
+                // appeared when users tapped during the WhisperKit
+                // prewarm + load window (5-10 s on iPad Mini A15 first launch).
+                if !appState.isModelLoaded {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .controlSize(.regular)
+                        .tint(.white)
+                        .opacity(0.85)
+                    Text("Loading model…")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                } else {
+                    Image(systemName: appState.isLiveActive ? "stop.circle.fill" : "mic.circle.fill")
+                        .font(.system(size: 36))
+                    Text(appState.isLiveActive ? "Stop" : "Tap to Record")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 18)
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
-        .tint(appState.isLiveActive ? .red : .accentColor)
+        .tint(loadingTint)
+        .disabled(!appState.isModelLoaded)
+        .animation(.easeOut(duration: 0.2), value: appState.isModelLoaded)
+        .animation(.easeOut(duration: 0.2), value: appState.isLiveActive)
+    }
+
+    /// Button color logic: gray while loading, accent when ready to record,
+    /// red while recording. Distinct enough that the loading state is
+    /// visually unmistakable.
+    private var loadingTint: Color {
+        if !appState.isModelLoaded { return .gray }
+        return appState.isLiveActive ? .red : .accentColor
     }
 
     private var toast: some View {

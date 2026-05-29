@@ -11,6 +11,14 @@ import AppKit
 struct LargeLiveTranscriptionView: View {
     @EnvironmentObject var appState: AppState
 
+    /// Snapshot of the transcript text taken right before Clear wipes it.
+    /// Held for ~4 s so the user can Undo. Nil = nothing to restore.
+    @State private var clearSnapshot: (last: String, confirmed: String, unconfirmed: String)?
+    @State private var showUndoToast: Bool = false
+    /// Tokenizes each Clear so multiple Clears within the window don't
+    /// race with each other's auto-dismiss timers.
+    @State private var clearToken: UUID = UUID()
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             statusHeader
@@ -49,6 +57,15 @@ struct LargeLiveTranscriptionView: View {
         #else
         .background(Color(uiColor: .systemBackground))
         #endif
+        // Undo toast for Clear — only safety net against accidental
+        // destroy. Auto-dismisses after 4 s.
+        .overlay(alignment: .bottom) {
+            if showUndoToast {
+                undoToast
+                    .padding(.bottom, 16)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
     }
 
     // MARK: - Footer (Clear · Stop/Record · Copy)
@@ -68,11 +85,10 @@ struct LargeLiveTranscriptionView: View {
         HStack(spacing: 12) {
             // Clear — destroys all transcript text (live + last). Disabled
             // when nothing's there. This is the ONLY explicit destroy
-            // affordance; Stop preserves.
+            // affordance; Stop preserves. Snapshots before wiping and
+            // shows an Undo toast for ~4 s.
             Button {
-                appState.lastTranscription = ""
-                appState.liveTranscriptConfirmed = ""
-                appState.liveTranscriptUnconfirmed = ""
+                clearWithUndo()
             } label: {
                 Label("Clear", systemImage: "xmark.circle")
                     .font(.system(size: appState.liveLargeWindowFontSize * 0.4,
@@ -147,6 +163,58 @@ struct LargeLiveTranscriptionView: View {
             || !appState.lastTranscription.isEmpty
     }
 
+    /// Snapshot the transcript, wipe, show undo toast. The token guards
+    /// against races if the user clicks Clear again within the 4 s window.
+    private func clearWithUndo() {
+        clearSnapshot = (
+            last: appState.lastTranscription,
+            confirmed: appState.liveTranscriptConfirmed,
+            unconfirmed: appState.liveTranscriptUnconfirmed
+        )
+        appState.lastTranscription = ""
+        appState.liveTranscriptConfirmed = ""
+        appState.liveTranscriptUnconfirmed = ""
+
+        let token = UUID()
+        clearToken = token
+        withAnimation { showUndoToast = true }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            // Only auto-dismiss if THIS Clear's token is still the latest;
+            // otherwise a newer Clear (or an Undo) has already moved on.
+            if clearToken == token {
+                withAnimation { showUndoToast = false }
+                clearSnapshot = nil
+            }
+        }
+    }
+
+    /// Small bottom-anchored capsule that lets the user reverse Clear.
+    /// Tapping Undo restores the snapshot; auto-dismisses after 4 s if
+    /// untouched.
+    private var undoToast: some View {
+        HStack(spacing: 12) {
+            Text("Cleared")
+                .font(.callout)
+                .foregroundColor(.primary)
+            Button("Undo") {
+                guard let snap = clearSnapshot else { return }
+                appState.lastTranscription = snap.last
+                appState.liveTranscriptConfirmed = snap.confirmed
+                appState.liveTranscriptUnconfirmed = snap.unconfirmed
+                clearSnapshot = nil
+                clearToken = UUID()  // invalidate pending auto-dismiss
+                withAnimation { showUndoToast = false }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.thinMaterial, in: Capsule())
+        .shadow(radius: 4, y: 2)
+    }
+
     // MARK: - Header (status + timer)
 
     private var statusHeader: some View {
@@ -157,9 +225,14 @@ struct LargeLiveTranscriptionView: View {
     private var statusHeaderRow: some View {
         HStack(spacing: 12) {
             if appState.isLiveActive {
+                // Spinner is intentionally muted — the red "Live" label
+                // already carries the active-state signal; the spinner
+                // is supplementary and shouldn't compete with the
+                // streaming text for attention.
                 ProgressView()
                     .progressViewStyle(.circular)
                     .controlSize(.regular)
+                    .opacity(0.45)
                 Text("Live")
                     .font(.system(size: appState.liveLargeWindowFontSize * 0.45, weight: .semibold))
                     .foregroundColor(.red)
@@ -171,6 +244,22 @@ struct LargeLiveTranscriptionView: View {
                     .font(.system(size: appState.liveLargeWindowFontSize * 0.45, weight: .regular))
                     .foregroundColor(.secondary)
             }
+
+            // Current toggle hotkey — macOS only. Helps users rediscover
+            // the trigger after the popover closes (notepad mode).
+            #if os(macOS)
+            let hk = HotkeyManager.shared.liveShortcutString
+            if !hk.isEmpty {
+                Text(hk)
+                    .font(.system(size: appState.liveLargeWindowFontSize * 0.32,
+                                  weight: .regular,
+                                  design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+            }
+            #endif
 
             Spacer()
 

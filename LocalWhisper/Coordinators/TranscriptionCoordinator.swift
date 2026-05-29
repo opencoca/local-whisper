@@ -175,10 +175,7 @@ final class TranscriptionCoordinator: ObservableObject {
                     await textInjectionService.typeText(text)
                 case .paste:
                     if appState.autoPasteOnHold {
-                        try await textInjectionService.injectText(
-                            text,
-                            useClipboardFallback: appState.useClipboardFallback
-                        )
+                        try await textInjectionService.injectText(text)
                     } else {
                         await textInjectionService.copyToClipboard(text)
                     }
@@ -488,10 +485,7 @@ final class TranscriptionCoordinator: ObservableObject {
                     await textInjectionService.typeText(visibleTranscript)
                 case .paste:
                     if liveTargetApp != nil {
-                        try? await textInjectionService.injectText(
-                            visibleTranscript,
-                            useClipboardFallback: appState.useClipboardFallback
-                        )
+                        try? await textInjectionService.injectText(visibleTranscript)
                     } else {
                         await textInjectionService.copyToClipboard(visibleTranscript)
                     }

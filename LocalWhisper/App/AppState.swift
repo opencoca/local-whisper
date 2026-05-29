@@ -44,9 +44,6 @@ final class AppState: ObservableObject {
     @Published var language: String {
         didSet { UserDefaults.standard.set(language, forKey: "language") }
     }
-    @Published var useClipboardFallback: Bool {
-        didSet { UserDefaults.standard.set(useClipboardFallback, forKey: "useClipboardFallback") }
-    }
     @Published var customVocabulary: [String] {
         didSet { UserDefaults.standard.set(customVocabulary, forKey: "customVocabulary") }
     }
@@ -71,10 +68,6 @@ final class AppState: ObservableObject {
     @Published var autoPasteOnHold: Bool {
         didSet { UserDefaults.standard.set(autoPasteOnHold, forKey: "autoPasteOnHold") }
     }
-    @Published var autoPasteOnLive: Bool {
-        didSet { UserDefaults.standard.set(autoPasteOnLive, forKey: "autoPasteOnLive") }
-    }
-
     /// What happens on Stop in live mode.
     /// - `.autoPaste`: clipboard + Cmd+V to the focused app; next Start
     ///   clears the display (each session is a discrete dictation).
@@ -257,7 +250,6 @@ final class AppState: ObservableObject {
         // Load settings from UserDefaults
         self.selectedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "openai_whisper-base"
         self.language = UserDefaults.standard.string(forKey: "language") ?? "en"
-        self.useClipboardFallback = UserDefaults.standard.object(forKey: "useClipboardFallback") as? Bool ?? true
         self.customVocabulary = UserDefaults.standard.stringArray(forKey: "customVocabulary") ?? []
         self.muteAudioWhileRecording = UserDefaults.standard.object(forKey: "muteAudioWhileRecording") as? Bool ?? true
 
@@ -270,12 +262,13 @@ final class AppState: ObservableObject {
         }
 
         self.autoPasteOnHold = UserDefaults.standard.object(forKey: "autoPasteOnHold") as? Bool ?? true
-        self.autoPasteOnLive = UserDefaults.standard.object(forKey: "autoPasteOnLive") as? Bool ?? true
 
         // LiveMode: prefer the explicit setting; otherwise derive from the
-        // legacy `autoPasteOnLive` (true → .autoPaste, false → .clipboardOnly)
-        // so existing users see no behavior change. New users get .autoPaste
-        // by default — same shipped UX.
+        // legacy `autoPasteOnLive` UserDefaults key (true → .autoPaste,
+        // false → .clipboardOnly) so existing users see no behavior change.
+        // The `autoPasteOnLive` and `useClipboardFallback` @Published
+        // properties were removed when LiveMode shipped — this one-shot
+        // read keeps the migration intact for upgraders.
         if let raw = UserDefaults.standard.string(forKey: "liveMode"),
            let m = LiveMode(rawValue: raw) {
             self.liveMode = m

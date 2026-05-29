@@ -486,38 +486,22 @@ struct ShortcutSettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Mode")
-                            .font(.subheadline.weight(.medium))
-                        Picker("Live mode", selection: $appState.liveMode) {
-                            Text("Auto-paste").tag(AppState.LiveMode.autoPaste)
-                            Text("Clipboard only").tag(AppState.LiveMode.clipboardOnly)
-                            Text("Notepad").tag(AppState.LiveMode.notepad)
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-
-                        // Caption updates per mode so the chosen workflow's
-                        // semantics are obvious without trial-and-error.
-                        Text({
-                            switch appState.liveMode {
-                            case .autoPaste:
-                                return "On stop, the app you were in becomes frontmost again and the transcript is pasted via Cmd+V. Each session is its own paste."
-                            case .clipboardOnly:
-                                return "On stop, the transcript lands on the clipboard only — paste it manually wherever you choose. Each session is its own clipboard write."
-                            case .notepad:
-                                return "On stop, nothing leaves the app — review the transcript here. Tapping record again continues with a paragraph break. Use Clear to start fresh."
-                            }
-                        }())
+                    // Live mode picker lives in the Live Mode tab now —
+                    // see [LiveModeSettingsView]. Keeping the section header
+                    // here for the shortcut itself, but the workflow
+                    // selection (paste / clipboard / notepad) moved to its
+                    // canonical home.
+                    Text("Mode selection moved to **Live Mode → Mode**.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    }
-                    .padding(.top, 4)
+                        .padding(.top, 4)
                 }
                 
-                // Output method — applies to both hold and live modes.
-                // Paste is fast but blocked in some apps; typing per-char
-                // is universal but slower (~5 ms/char).
+                // Output method — applies to hold mode and the autoPaste
+                // live mode (per-char vs paste). Notepad mode keeps text
+                // on-screen only, so no injection happens — disable the
+                // picker there to remove the affordance for a setting that
+                // would silently no-op.
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Output method")
                         .font(.headline)
@@ -527,9 +511,12 @@ struct ShortcutSettingsView: View {
                             .tag(AppState.OutputMethod.typeCharacters)
                     }
                     .pickerStyle(.segmented)
-                    Text(appState.outputMethod == .typeCharacters
-                         ? "Each character is posted as a real keystroke (~5 ms/char). Works in password fields, secure terminals, and any app that blocks paste."
-                         : "Uses clipboard + Cmd+V. Fast, but some apps (password fields, certain banking/security apps) reject programmatic paste — switch to character mode if your text isn't landing.")
+                    .disabled(appState.liveMode == .notepad)
+                    Text(appState.liveMode == .notepad
+                         ? "Notepad live mode keeps text on-screen only — no injection. Output method applies to hold mode and the Auto-paste / Clipboard-only live modes."
+                         : (appState.outputMethod == .typeCharacters
+                            ? "Each character is posted as a real keystroke (~5 ms/char). Works in password fields, secure terminals, and any app that blocks paste."
+                            : "Uses clipboard + Cmd+V. Fast, but some apps (password fields, certain banking/security apps) reject programmatic paste — switch to character mode if your text isn't landing."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -628,10 +615,44 @@ struct LiveModeSettingsView: View {
                     Text("Live Mode")
                         .font(.title2)
                         .fontWeight(.semibold)
-                    Text("Streaming transcription settings. The shortcut and auto-paste live under Shortcuts.")
+                    Text("Streaming transcription settings. The hotkey lives under Shortcuts.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
+
+                // Mode — what happens on Stop. Replaces the old
+                // `autoPasteOnLive` toggle; lives here (rather than under
+                // Shortcuts) because it's the top-level live-workflow
+                // decision and belongs with the other live settings.
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Mode")
+                        .font(.headline)
+                    Picker("Live mode", selection: $appState.liveMode) {
+                        Text("Auto-paste").tag(AppState.LiveMode.autoPaste)
+                        Text("Clipboard only").tag(AppState.LiveMode.clipboardOnly)
+                        Text("Notepad").tag(AppState.LiveMode.notepad)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+
+                    // Caption per mode — semantics obvious without
+                    // trial-and-error.
+                    Text({
+                        switch appState.liveMode {
+                        case .autoPaste:
+                            return "On stop, the app you were in becomes frontmost again and the transcript is pasted via Cmd+V. Each session is its own paste."
+                        case .clipboardOnly:
+                            return "On stop, the transcript lands on the clipboard only — paste it manually wherever you choose. Each session is its own clipboard write."
+                        case .notepad:
+                            return "On stop, nothing leaves the app — review the transcript in the large window. Tapping Record again continues with a paragraph break. Use Clear to start fresh."
+                        }
+                    }())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                .padding()
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(12)
 
                 // Voice-activity detection
                 VStack(alignment: .leading, spacing: 12) {
@@ -698,12 +719,25 @@ struct LiveModeSettingsView: View {
                     Text("Large transcription window")
                         .font(.headline)
 
+                    // Notepad mode force-opens the large window regardless
+                    // of this toggle (it IS the notepad surface). Disable
+                    // the toggle in that case so users can't toggle a
+                    // setting that has no effect — poka-yoke: remove the
+                    // affordance for an action that doesn't happen.
                     Toggle("Open a large window during live transcription",
-                           isOn: $appState.liveLargeWindowEnabled)
+                           isOn: notepadAwareLargeWindowBinding)
                         .toggleStyle(.switch)
-                    Text("Opens an opaque, dedicated window with large text — useful for low-vision users, presentations, or just having the transcript front-and-centre instead of in the small popover.")
+                        .disabled(appState.liveMode == .notepad)
+                    Text(appState.liveMode == .notepad
+                         ? "Notepad mode always opens the large window — that's its primary surface."
+                         : "Opens an opaque, dedicated window with large text — useful for low-vision users, presentations, or just having the transcript front-and-centre instead of in the small popover.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    // Font / contrast / floating apply whenever the large
+                    // window will actually be shown — either the user opted
+                    // in, OR notepad mode forces it.
+                    let largeWindowActive = appState.liveLargeWindowEnabled || appState.liveMode == .notepad
 
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
@@ -716,14 +750,14 @@ struct LiveModeSettingsView: View {
                         Slider(value: $appState.liveLargeWindowFontSize,
                                in: 24.0...96.0,
                                step: 2.0)
-                            .disabled(!appState.liveLargeWindowEnabled)
+                            .disabled(!largeWindowActive)
                     }
                     .padding(.top, 4)
 
                     Toggle("High-contrast (bold confirmed text)",
                            isOn: $appState.liveLargeWindowHighContrast)
                         .toggleStyle(.switch)
-                        .disabled(!appState.liveLargeWindowEnabled)
+                        .disabled(!largeWindowActive)
                     Text("Confirmed segments render in semibold weight; the still-being-revised tail stays regular. Easier to distinguish settled vs. in-flux text at a glance.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -731,7 +765,7 @@ struct LiveModeSettingsView: View {
                     Toggle("Keep window above other apps",
                            isOn: $appState.liveLargeWindowFloating)
                         .toggleStyle(.switch)
-                        .disabled(!appState.liveLargeWindowEnabled)
+                        .disabled(!largeWindowActive)
                     Text("Window floats above other windows so you can dictate while reading from another app.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -786,6 +820,20 @@ struct LiveModeSettingsView: View {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         appState.liveTxtFolder = url
+    }
+
+    /// Binding that visually pins the toggle to "on" in notepad mode (since
+    /// the large window is force-opened by AppDelegate regardless of the
+    /// underlying preference). Writes are no-ops in notepad — the Toggle is
+    /// also `.disabled(...)` so the user can't trigger one anyway.
+    private var notepadAwareLargeWindowBinding: Binding<Bool> {
+        Binding(
+            get: { appState.liveMode == .notepad ? true : appState.liveLargeWindowEnabled },
+            set: { newValue in
+                guard appState.liveMode != .notepad else { return }
+                appState.liveLargeWindowEnabled = newValue
+            }
+        )
     }
 }
 
