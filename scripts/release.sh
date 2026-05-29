@@ -1,12 +1,13 @@
 #!/bin/bash
 set -e
 
-# LocalWhisper Release Script
+# Sage.is Talking Release Script
 # Creates a distributable .app bundle and DMG
 
 VERSION="${1:-1.0.0}"
-APP_NAME="LocalWhisper"
-BUNDLE_ID="com.localwhisper.app"
+APP_NAME="Talking"              # File/binary/DMG name (no spaces)
+DISPLAY_NAME="Sage.is Talking"  # User-facing app name (CFBundleName/DisplayName)
+BUNDLE_ID="is.sage.talking"
 
 # Directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,7 +16,7 @@ BUILD_DIR="$PROJECT_DIR/.build/release"
 DIST_DIR="$PROJECT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 
-echo "🚀 Building LocalWhisper v$VERSION"
+echo "🚀 Building $DISPLAY_NAME v$VERSION"
 echo "================================"
 
 # Clean previous builds
@@ -39,13 +40,13 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 # Copy executable
-cp "$BUILD_DIR/LocalWhisper" "$APP_BUNDLE/Contents/MacOS/"
+cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/"
 
 # Copy icon
-if [ -f "$PROJECT_DIR/LocalWhisper/Resources/AppIcon.icns" ]; then
-    cp "$PROJECT_DIR/LocalWhisper/Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/"
-elif [ -f "$PROJECT_DIR/LocalWhisper.app/Contents/Resources/AppIcon.icns" ]; then
-    cp "$PROJECT_DIR/LocalWhisper.app/Contents/Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/"
+if [ -f "$PROJECT_DIR/Talking/Resources/AppIcon.icns" ]; then
+    cp "$PROJECT_DIR/Talking/Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/"
+elif [ -f "$PROJECT_DIR/$APP_NAME.app/Contents/Resources/AppIcon.icns" ]; then
+    cp "$PROJECT_DIR/$APP_NAME.app/Contents/Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/"
 fi
 
 # Create Info.plist
@@ -55,9 +56,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>$APP_NAME</string>
+    <string>$DISPLAY_NAME</string>
     <key>CFBundleDisplayName</key>
-    <string>$APP_NAME</string>
+    <string>$DISPLAY_NAME</string>
     <key>CFBundleIdentifier</key>
     <string>$BUNDLE_ID</string>
     <key>CFBundleVersion</key>
@@ -75,7 +76,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>LocalWhisper needs microphone access to record audio for voice-to-text transcription.</string>
+    <string>$DISPLAY_NAME needs microphone access to record audio for voice-to-text transcription.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>LSApplicationCategoryType</key>
@@ -94,11 +95,11 @@ EOF
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
 # Sign the app with a persistent identity so macOS TCC entries
-# (Accessibility, Microphone, etc.) survive rebuilds. The "LocalWhisper Dev"
+# (Accessibility, Microphone, etc.) survive rebuilds. The "Talking Dev"
 # identity is created once per machine by `make setup` — without it,
 # codesign falls back to ad-hoc signing and every rebuild orphans the
 # user's permissions. Fail loudly with a fix hint if it's missing.
-SIGN_IDENTITY="LocalWhisper Dev"
+SIGN_IDENTITY="Talking Dev"
 # NOT using `-v` — that flag filters to chain-trusted identities and excludes
 # our self-signed dev cert. codesign accepts untrusted identities as long as
 # the private key is present and the cert has the code-signing EKU.
@@ -121,7 +122,7 @@ echo "🔐 Signing app with '$SIGN_IDENTITY'..."
 # until then, leave it off so dev builds Just Work.
 codesign --force --deep \
     --sign "$SIGN_IDENTITY" \
-    --identifier com.localwhisper.app \
+    --identifier "$BUNDLE_ID" \
     "$APP_BUNDLE"
 
 # Verify the app
@@ -137,7 +138,7 @@ echo "💿 Creating DMG..."
 DMG_NAME="$APP_NAME-$VERSION.dmg"
 DMG_PATH="$DIST_DIR/$DMG_NAME"
 BACKGROUND="$PROJECT_DIR/assets/dmg_background.png"
-VOLICON="$PROJECT_DIR/LocalWhisper/Resources/AppIcon.icns"
+VOLICON="$PROJECT_DIR/Talking/Resources/AppIcon.icns"
 
 if ! command -v create-dmg >/dev/null 2>&1; then
     echo "❌ create-dmg not found. Install with: brew install create-dmg"
@@ -155,11 +156,11 @@ rm -f "$DMG_PATH"
 
 # create-dmg handles the layout-aware DMG end-to-end:
 #   - styled Finder window (toolbar/sidebar hidden, icon view, sized)
-#   - LocalWhisper.app + Applications symlink at named coordinates
+#   - Talking.app + Applications symlink at named coordinates
 #   - background picture
-#   - volume icon (matches the app icon so the mounted disk reads as LocalWhisper)
+#   - volume icon (matches the app icon so the mounted disk reads as Talking)
 create-dmg \
-    --volname "$APP_NAME" \
+    --volname "$DISPLAY_NAME" \
     --volicon "$VOLICON" \
     --background "$BACKGROUND" \
     --window-pos 200 120 \
@@ -196,8 +197,8 @@ echo "  • $ZIP_NAME ($ZIP_SIZE)"
 echo ""
 echo "To install:"
 echo "  1. Open $DMG_NAME"
-echo "  2. Drag LocalWhisper to Applications"
-echo "  3. Open LocalWhisper from Applications"
+echo "  2. Drag $DISPLAY_NAME to Applications"
+echo "  3. Open $DISPLAY_NAME from Applications"
 echo "  4. Grant Microphone and Accessibility permissions when prompted"
 echo ""
 echo "For GitHub release, upload: $ZIP_PATH"

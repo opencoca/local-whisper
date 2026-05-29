@@ -29,6 +29,6 @@ jobs:
       - name: Verify binary
         run: |
           # Check binary exists and has correct architecture
-          file .build/release/LocalWhisper
+          file .build/release/Talking
           # Note: This is a GUI app, so we only verify the binary exists
           # We cannot run it in CI as it requires macOS GUI environment

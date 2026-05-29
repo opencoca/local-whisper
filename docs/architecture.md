@@ -2,19 +2,25 @@
 
 ## Project Structure
 
-```
-LocalWhisper/
+```text
+Talking/
 ├── App/                 # App entry point, delegate, global state
-├── UI/                  # SwiftUI views (menu bar, settings)
+├── UI/                  # SwiftUI views (menu bar, settings, speak panel, large modal)
 ├── Services/            # Core services
 │   ├── AudioCaptureService    # AVAudioEngine-based recording
 │   ├── TranscriptionService   # WhisperKit integration
-│   ├── TextInjectionService   # AXUIElement + clipboard fallback
+│   ├── SpeakService           # AVSpeechSynthesizer wrapper (v1.2.0+)
+│   ├── AudioExporter          # .wav/.m4a writer for capture + speech (v1.2.0+)
+│   ├── TextSourceService      # AX selection / pasteboard / URL / file resolver (v1.2.0+)
+│   ├── TextInjectionService   # Clipboard + simulated Cmd+V
 │   └── PermissionsService     # macOS permission handling
 ├── Coordinators/        # Workflow orchestration
 ├── Models/              # Data models
 └── Resources/           # Assets, Info.plist
 ```
+
+The source directory was renamed from `LocalWhisper/` to `Talking/` in
+v1.2.0 (the *Sage.is Talking* rebrand).
 
 ## Core Components
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LocalWhisper is a macOS menu bar app for 100% offline voice-to-text using WhisperKit. Hold a hotkey to record, release to transcribe, and text is auto-pasted into the focused app. Requires macOS 14+ on Apple Silicon.
+**Sage.is Talking** (codebase repo still named `local-whisper`; rebranded from LocalWhisper in v1.2.0) is a macOS menu bar app for 100% offline voice work using WhisperKit + AVSpeechSynthesizer. Hold a hotkey to record, release to transcribe, and text is auto-pasted into the focused app. From v1.2.0 it also speaks selection/clipboard/typed/file/URL text, transcribes dragged-in audio/video files in a large modal, saves audio in both directions, and shows a read-along highlight. Requires macOS 14+ on Apple Silicon.
 
 ## Build Commands
 
@@ -39,7 +39,7 @@ HotkeyManager (CGEvent tap)
 
 ### App Lifecycle
 
-The app runs as a menu bar accessory (`NSApp.setActivationPolicy(.accessory)`) with no dock icon. `LocalWhisperApp` uses `@NSApplicationDelegateAdaptor` to delegate to `AppDelegate`, which owns the `NSStatusItem`, popover, and settings window. The SwiftUI `MenuBarExtra` scene exists but renders `EmptyView` -- all menu bar UI is managed by AppDelegate directly.
+The app runs as a menu bar accessory (`NSApp.setActivationPolicy(.accessory)`) with no dock icon. `TalkingApp` (`Talking/App/TalkingApp.swift`) uses `@NSApplicationDelegateAdaptor` to delegate to `AppDelegate`, which owns the `NSStatusItem`, popover, and settings window. The SwiftUI `MenuBarExtra` scene exists but renders `EmptyView` -- all menu bar UI is managed by AppDelegate directly.
 
 ### Hotkey System
 
@@ -68,23 +68,25 @@ Settings use manual `UserDefaults` get/set in `AppState` `@Published` property `
 - Requires Microphone and Accessibility permissions at runtime
 - Audio format must be 16kHz mono Float32 for WhisperKit compatibility
 - Custom vocabulary works via WhisperKit `promptTokens` (token-level hints, not instruction prompts) -- larger models respond better
-- Logs write to `~/Library/Logs/LocalWhisper.log` and `/tmp/localwispr_keys.log` (debug key events)
+- Logs write to `~/Library/Logs/Talking.log` and `/tmp/talking_keys.log` (debug key events)
 
 ## Dev Signing
 
-`make app` produces a `dist/LocalWhisper.app` signed with a persistent self-signed identity named **`LocalWhisper Dev`**. This identity is created once per machine by `make setup` ([scripts/ensure-dev-signing-identity.sh](scripts/ensure-dev-signing-identity.sh)) and lives in the user's login keychain.
+`make app` produces a `dist/Talking.app` signed with a persistent self-signed identity named **`Talking Dev`** (legacy `LocalWhisper Dev` identity is preserved on machines that built pre-rebrand). This identity is created once per machine by `make setup` ([scripts/ensure-dev-signing-identity.sh](scripts/ensure-dev-signing-identity.sh)) and lives in the user's login keychain.
 
 **Why this matters:** macOS keys TCC entries (Accessibility, Microphone, etc.) by the cryptographic signing identity, NOT by bundle id or path. If the build is ad-hoc signed (`codesign --sign -`), every rebuild gets a fresh identity and the previously granted Accessibility row is orphaned — hotkeys + auto-paste stop working until the user re-grants in System Settings. With a persistent identity, the grant survives all rebuilds on that machine.
 
 **One-time setup on a fresh box:**
 
 ```bash
-make setup                                                # creates 'LocalWhisper Dev' cert
-tccutil reset Accessibility com.localwhisper.app          # clear orphaned grants from prior ad-hoc builds
-tccutil reset Microphone com.localwhisper.app
+make setup                                                # creates 'Talking Dev' cert
+tccutil reset Accessibility is.sage.talking               # clear orphaned grants from prior ad-hoc builds
+tccutil reset Microphone is.sage.talking
 make clean && make app && make open_app                   # rebuild and launch
 # macOS prompts once for permissions; grant; never need to re-grant.
 ```
+
+**TCC re-grant on v1.2.0 upgrade:** users coming from a `com.localwhisper.app`-bundle-id install will see the *new* `is.sage.talking` identity as a fresh app and need to re-grant Accessibility + Microphone once. The first-launch banner in the popover explains this. Old TCC rows for `com.localwhisper.app` can be cleared via the same `tccutil reset … com.localwhisper.app` if desired.
 
 If `codesign` prompts for keychain access on the first build, click **Always Allow** — the cert is locked to your machine and you'll never see the prompt again. The cert is NOT committed to git; each contributor generates their own.
 
@@ -97,4 +99,8 @@ whisperKit = try await WhisperKit(model: modelName, verbose: true, logLevel: .de
 
 Status bar dot colors indicate state: yellow=loading, green=ready, red=recording, blue=transcribing, orange=error.
 
-`HotkeyManager` writes `start()` / `stop()` outcomes to `~/Library/Logs/LocalWhisper.log` — `tail` it after any "hotkeys broken" symptom to see whether the event tap actually installed. A `start() FAILED — both HID and session tapCreate returned nil` line is the canonical signal of a stale TCC entry.
+`HotkeyManager` writes `start()` / `stop()` outcomes to `~/Library/Logs/Talking.log` — `tail` it after any "hotkeys broken" symptom to see whether the event tap actually installed. A `start() FAILED — both HID and session tapCreate returned nil` line is the canonical signal of a stale TCC entry.
+
+## Two-Way Voice (v1.2.0+)
+
+Beyond transcription, the app speaks text via AVSpeechSynthesizer (v1.2.0 baseline; Kokoro CoreML in v2; Chatterbox voice-cloning via `chatterbox-cli` brew tap in v3). The TTS lane is symmetrical to the transcription lane: `SpeakService` mirrors `TranscriptionService`'s actor + progress-stream shape; `AudioExporter` is the single writer for both captured-recording-out and synthesized-speech-out (`.wav` or `.m4a`); `LargeLiveTranscriptionView` becomes mode-aware (live / file-transcribe / read-along TTS). See `~/.claude/plans/we-need-to-get-smooth-anchor.md` for the full v1.2.0 design.

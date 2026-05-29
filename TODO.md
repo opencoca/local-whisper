@@ -20,8 +20,53 @@ This file tracks active work for the LocalWhisper menu bar app.
 
 ## In Progress
 
+- [ ] **Sage.is Talking 1.2.0 — Two-Way Voice + Rebrand** #release #brand #tts #ux
+  - Plan at `~/.claude/plans/we-need-to-get-smooth-anchor.md`. Reshapes LocalWhisper from one-way (mic → transcript) into two-way (mic → transcript AND text → speech), rebrands to **Sage.is Talking**, and adds drag-to-transcribe file flow + audio save in both directions + read-along modal — all in one release so users hit one TCC re-grant moment instead of two.
+  - **Rebrand canonicals**: app display *Sage.is Talking* / short *Talking*; bundle id proposed `is.sage.talking`; source dir `LocalWhisper/` → `Talking/`; log paths `~/Library/Logs/Talking.log`, `/tmp/talking_keys.log`, `/tmp/talking_fn.log`; dev signing identity `Talking Dev` (legacy `LocalWhisper Dev` left intact for back-compat).
+  - **Engine phasing**: v1.2.0 uses **AVSpeechSynthesizer** with Siri-quality voices (Default/Enhanced/Premium/Personal Voice tiers). v2 will add Kokoro CoreML as a downloadable engine. v3 will add Chatterbox voice-cloning via a `chatterbox-cli` brew package (detect-and-use; app stays slim).
+  - **Phase 1 — Rebrand commit** (compiles + runs, original feature set, under new name)
+    - [ ] `git mv LocalWhisper/ Talking/`
+    - [ ] `Package.swift` — rename package + executable target to `Talking`
+    - [ ] `scripts/release.sh` — `CFBundleName/CFBundleDisplayName=Sage.is Talking`, `CFBundleIdentifier=is.sage.talking`, DMG `Talking-vX.Y.Z.dmg`
+    - [ ] `scripts/ensure-dev-signing-identity.sh` — `Talking Dev` identity (idempotent; keep `LocalWhisper Dev` for back-compat)
+    - [ ] `Makefile` — `APP_NAME=Talking`, log paths, `dist/Talking.app`
+    - [ ] UI strings: `MenuBarView.swift` header, `SettingsView.swift` (Permissions / Help / About)
+    - [ ] Log paths: `TranscriptionService.swift`, `HotkeyManager.swift`, `AppDelegate.swift`
+    - [ ] `CLAUDE.md` — Project Overview + log paths + dev-signing identity name
+    - [ ] First-launch TCC re-grant banner (lands later with popover work)
+    - [ ] `swift build -c release` clean
+  - **Phase 2 — Models** (small, isolated)
+    - [ ] `Talking/Models/SpeakState.swift` — `.idle / .preparing / .speaking(progress,range) / .paused / .error` (mirrors `TranscriptionState`)
+    - [ ] `Talking/Models/SpeakSource.swift` — `.selection / .clipboard / .typed / .file / .url`
+    - [ ] `Talking/Models/FileTranscriptionSource.swift` — URL + displayName + durationSeconds
+  - **Phase 3 — Services**
+    - [ ] `Talking/Services/SpeakService.swift` (NEW) — `actor` wrapping `AVSpeechSynthesizer`; `speak`, `pause`, `resume`, `stop`, `progressStream`, `rangeStream`, `renderToAudioData`
+    - [ ] `Talking/Services/AudioExporter.swift` (NEW) — `actor`; single writer for both directions; `.wav` (PCM Float32) and `.m4a` (AAC 64 kbps mono 22 050 Hz)
+    - [ ] `Talking/Services/TextSourceService.swift` (NEW) — `actor`; AX selection (`kAXSelectedTextAttribute`), pasteboard, URL fetch + HTML strip, file decode (`String(contentsOf:)` / `PDFKit`)
+    - [ ] `Talking/Services/HotkeyManager.swift` — add `speakKeyCode`/`speakModifiers`/`onSpeakKeyDown` + persistence (third lane on the same CGEvent tap)
+  - **Phase 4 — Coordinator wiring**
+    - [ ] `TranscriptionCoordinator.configure(speakService:textSourceService:audioExporter:)`
+    - [ ] `handleSpeakHotkey()`, `startSpeak(source:)`, `stopSpeak()`, `exportSpeakToFile(source:url:format:)`, `exportLastRecording(to:format:)`, `startFileTranscription(_:)`, `stopFileTranscription()`
+    - [ ] Stamp `appState.lastRecording = audio` after each successful transcribe; clear on new recording start
+    - [ ] File-transcribe chunks ~30 s with ~1 s overlap; appends to `liveTranscriptConfirmed`
+  - **Phase 5 — AppState extension** (additive only)
+    - [ ] `@Published`: `speakState`, `ttsVoiceID`, `ttsRate`, `ttsPitch`, `ttsDefaultSource`, `readAlongText`, `readAlongRange`, `fileTranscriptionSource`, `fileTranscriptionProgress`, `lastRecording: AudioData?` (transient)
+    - [ ] Instantiate `SpeakService`, `TextSourceService`, `AudioExporter` in `init()`
+  - **Phase 6 — UI**
+    - [ ] `Talking/UI/SpeakPanel.swift` (NEW) — text field, voice picker, rate slider, source buttons (Selection / Clipboard / File / URL), Speak / Pause / Stop, Save Audio…
+    - [ ] `MenuBarView.swift` — Transcribe / Speak section toggle; "Speak last transcription" + "Save audio (X s)" buttons on transcription side; "Transcribe a file…" affordance
+    - [ ] `LargeLiveTranscriptionView.swift` — mode-aware (live / file / read-along); file header shows displayName + progress bar; read-along renders `AttributedString` with current-word highlight, Pause/Resume/Stop/Save-Audio footer; auto-scroll keeps active word in middle third
+    - [ ] `SettingsView.swift` — Voice tab: quality-tier voice picker, rate/pitch sliders, default source, speak-hotkey recorder, "Show read-along window when speaking" toggle (default on); first-launch TCC banner
+  - **Phase 7 — AppDelegate**
+    - [ ] Wire `HotkeyManager.shared.onSpeakKeyDown = { coordinator.handleSpeakHotkey() }`
+    - [ ] `application(_:open:)` routes audio/video UTIs → file-transcribe, text/PDF UTIs → TTS
+    - [ ] Menu items: *Speak Selection*, *Speak Clipboard*, *Speak File…*, *Save Speech As…*, *Save Last Recording…* (disabled when `lastRecording == nil`), *Transcribe File…*
+  - **Verification** (per plan): Rebrand (Info.plist + TCC re-grant); Side A (all five TTS triggers); Side B (drag/Open/popover-drop file transcribe); Side C (audio export both directions, `.m4a` + `.wav`); Side D (read-along modal, throttled word highlight, font-size/contrast/floating toggles); cross-cutting (logs, quit cleanup)
+  - **Out of scope** (tracked for v2 / v3): Kokoro CoreML engine; Chatterbox detect-and-use via brew (`chatterbox-cli` formula in `Sage-is/homebrew-apps`, FastAPI daemon + warm process); Readability article extraction; SRT/VTT export of file transcripts; SSML markup; speaker diarization; Personal Voice creation flow
+  - **Release mechanics**: `feature/sage-is-talking-v1` off `develop` (git-flow; never to master). Commit 1 = rebrand only (still compiles). Commits 2–N = functional additions, one per discrete unit. Bump `release.sh` to v1.2.0. PR into `develop`. `release_finish` per the existing flow.
+
 - [ ] **LocalWhisper for iPhone — minimal standalone iOS app** #ios #cross-platform
-  - Mobile research concluded iOS standalone is the highest-leverage cross-platform move: WhisperKit is iOS-native, ~60-65% of macOS Swift LOC ports with cosmetic changes, product shape is "open → dictate → live transcript → copy → swap apps → paste." Differentiation = AGPL + 100% offline + same-app-as-desktop. Plan at `~/.claude/plans/we-need-to-get-smooth-anchor.md`.
+  - Mobile research concluded iOS standalone is the highest-leverage cross-platform move: WhisperKit is iOS-native, ~60-65% of macOS Swift LOC ports with cosmetic changes, product shape is "open → dictate → live transcript → copy → swap apps → paste." Differentiation = AGPL + 100% offline + same-app-as-desktop. iOS implementation detail captured inline below (the prior plan-file pointer is stale — the plan file at `~/.claude/plans/we-need-to-get-smooth-anchor.md` now holds the macOS 1.2.0 rebrand + TTS scope above).
   - **Architecture**: same repo; new `LocalWhisperMobile.xcodeproj` alongside `Package.swift`; new `LocalWhisper/Mobile/` folder for iOS-only code; `#if os(macOS)` guards in the 2-3 shared files with macOS-isms; macOS Package.swift target excludes `Mobile/`.
   - **Step 1**: Guard shared files cross-platform
     - [ ] `TranscriptionService.swift:175-189` — wrap `~/Library/Logs/LocalWhisper.log` in `#if os(macOS)` / use `URL.cachesDirectory` on iOS
@@ -123,9 +168,9 @@ This file tracks active work for the LocalWhisper menu bar app.
 
 ### From Codebase (untracked)
 
-_Populated by the TodoScope scanner once it has run. Inline tags in source
+*Populated by the TodoScope scanner once it has run. Inline tags in source
 that don't yet have a corresponding card here will be grouped under this
-heading by area (Services, UI, Coordinators, etc.)._
+heading by area (Services, UI, Coordinators, etc.).*
 
 ## Backlog
 
@@ -149,18 +194,14 @@ heading by area (Services, UI, Coordinators, etc.)._
   - [ ] Surface download progress more clearly in the menu bar UI
   - [ ] Handle proxy / offline cases beyond the current `useBackgroundDownloadSession: false` workaround
 
-- [ ] **macOS rebrand to Sage.is name (1.2.0)** #brand #cross-platform
-  - Triggered by the iOS launch under a Sage.is brand (see In Progress card). Once the iOS name is locked, the macOS app should follow in a 1.2.0 release so users on both platforms see one brand. Don't rename macOS until the iOS name has been used in TestFlight enough to confirm it sticks.
-  - [ ] Rename Xcode/SPM target: `LocalWhisper` → final Sage.is name
-  - [ ] `CFBundleDisplayName` + `CFBundleName` in macOS Info.plist
-  - [ ] Bundle ID: keep `com.localwhisper.app` for TCC continuity OR migrate to `is.sage.talk` (TCC re-grant cost — flag in release notes either way)
+- [ ] **macOS rebrand to Sage.is name (1.2.0)** — *superseded by the In Progress card* #brand #cross-platform
+  - The rebrand is now bundled with the v1.2.0 two-way-voice work in the In Progress card above. Items that remain genuinely backlog-only (because they happen *after* the in-app v1.2.0 PR lands) are listed below; everything else moved into the In Progress card's phases.
+  - [ ] `homebrew-apps/Casks/local-whisper.rb` → new cask `talking.rb`; deprecate the old cask with a `caveats` pointing at the new one for ~2 releases
   - [ ] `README.md` — title, install command, screenshots
-  - [ ] `homebrew-apps/Casks/local-whisper.rb` → new cask name; deprecate the old cask name with a `caveats` pointing at the new one for ~2 releases
   - [ ] Repo description on GitHub + topics
-  - [ ] Possible repo rename (`local-whisper` → `sage-talk` etc.) — separate decision, breaks links so save for last
-  - [ ] `CHANGELOG.md` — 1.2.0 entry framing it as a rename, not a feature change
-  - [ ] Update `CLAUDE.md` references where appropriate
-  - 1-2 evenings of mechanical work; coordinate with iOS App Store listing copy for brand consistency
+  - [ ] Possible repo rename (`local-whisper` → `sage-talking` etc.) — separate decision, breaks links so save for last
+  - [ ] `CHANGELOG.md` — 1.2.0 entry framing it as rename + TTS + file transcribe + audio export + read-along
+  - Note: Bundle ID migration to `is.sage.talking` is part of the In Progress card and accepts the one-time TCC re-grant cost (mitigated by the first-launch banner).
 
 - [ ] **Funding / sponsorship options** #community #infra
   - LocalWhisper is AGPL-3.0 and 100% offline — no paid SaaS hook. Give people who want to support the project a way to.
@@ -173,8 +214,8 @@ heading by area (Services, UI, Coordinators, etc.)._
 
 ## Bugs
 
-_No known bugs. Use `// BUG:` inline tags in source to flag defects — they
-will surface here automatically once the TodoScope scanner runs._
+*No known bugs. Use `// BUG:` inline tags in source to flag defects — they
+will surface here automatically once the TodoScope scanner runs.*
 
 ## Done
 

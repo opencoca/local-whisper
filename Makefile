@@ -90,10 +90,10 @@ app:
 	./scripts/release.sh $(VERSION)
 
 open_app:
-	open dist/LocalWhisper.app
+	open dist/Talking.app
 
 logs:
-	tail -f ~/Library/Logs/LocalWhisper.log
+	tail -f ~/Library/Logs/Talking.log
 
 clean:
 	swift package clean
@@ -102,7 +102,7 @@ clean:
 # --- iOS / iPadOS ---------------------------------------------------------
 #
 # `make ios` is the umbrella entry point: downloads the bundled tiny.en
-# Whisper model and generates LocalWhisperMobile.xcodeproj via XcodeGen.
+# Whisper model and generates TalkingMobile.xcodeproj via XcodeGen.
 # Both sub-targets are idempotent — safe to re-run any time.
 #
 # Open the generated project in Xcode for signing/scheme/run.
@@ -110,45 +110,45 @@ clean:
 ios: ios_models ios_xcode
 	@echo ""
 	@echo "  📱 iOS setup complete"
-	@echo "  Next: open LocalWhisperMobile.xcodeproj"
+	@echo "  Next: open TalkingMobile.xcodeproj"
 
 # Download openai_whisper-tiny.en (~75 MB) into Mobile/Resources/Models/.
 # Uses HuggingFace CLI; idempotent (no-op if folder already populated).
 # The model files are gitignored — each contributor downloads on their own box.
 ios_models:
 	@echo "→ Checking for bundled Whisper model..."
-	@if test -d LocalWhisper/Mobile/Resources/Models/openai_whisper-tiny.en && \
-	    test -n "$$(ls -A LocalWhisper/Mobile/Resources/Models/openai_whisper-tiny.en 2>/dev/null)"; then \
+	@if test -d Talking/Mobile/Resources/Models/openai_whisper-tiny.en && \
+	    test -n "$$(ls -A Talking/Mobile/Resources/Models/openai_whisper-tiny.en 2>/dev/null)"; then \
 		echo "  ⏭  openai_whisper-tiny.en already present"; \
 	else \
-		mkdir -p LocalWhisper/Mobile/Resources/Models; \
+		mkdir -p Talking/Mobile/Resources/Models; \
 		echo "→ Downloading openai_whisper-tiny.en from HuggingFace..."; \
 		if command -v uvx >/dev/null 2>&1; then \
 			uvx --from huggingface_hub hf download \
 				argmaxinc/whisperkit-coreml \
 				--include "openai_whisper-tiny.en/*" \
-				--local-dir LocalWhisper/Mobile/Resources/Models; \
+				--local-dir Talking/Mobile/Resources/Models; \
 		elif command -v hf >/dev/null 2>&1; then \
 			hf download argmaxinc/whisperkit-coreml \
 				--include "openai_whisper-tiny.en/*" \
-				--local-dir LocalWhisper/Mobile/Resources/Models; \
+				--local-dir Talking/Mobile/Resources/Models; \
 		else \
 			echo "❌ Need uv (preferred) or huggingface_hub installed."; \
 			echo "   Install uv:  brew install uv  (or  curl -LsSf https://astral.sh/uv/install.sh | sh)"; \
 			echo "   Then retry:  make ios_models"; \
 			exit 1; \
 		fi; \
-		test -d LocalWhisper/Mobile/Resources/Models/openai_whisper-tiny.en || { \
+		test -d Talking/Mobile/Resources/Models/openai_whisper-tiny.en || { \
 			echo "❌ Download finished but openai_whisper-tiny.en/ is missing — check the output above"; \
 			exit 1; \
 		}; \
 		echo "→ Stripping .mlpackage source + .cache (Xcode would double-compile .mlmodelc + .mlpackage)..."; \
-		rm -rf LocalWhisper/Mobile/Resources/Models/.cache/; \
-		rm -rf LocalWhisper/Mobile/Resources/Models/openai_whisper-tiny.en/*.mlpackage/; \
-		echo "  ✅ openai_whisper-tiny.en downloaded ($$(du -sh LocalWhisper/Mobile/Resources/Models/openai_whisper-tiny.en | awk '{print $$1}'))"; \
+		rm -rf Talking/Mobile/Resources/Models/.cache/; \
+		rm -rf Talking/Mobile/Resources/Models/openai_whisper-tiny.en/*.mlpackage/; \
+		echo "  ✅ openai_whisper-tiny.en downloaded ($$(du -sh Talking/Mobile/Resources/Models/openai_whisper-tiny.en | awk '{print $$1}'))"; \
 	fi
 
-# Generate LocalWhisperMobile.xcodeproj from project.yml. Source of truth is
+# Generate TalkingMobile.xcodeproj from project.yml. Source of truth is
 # project.yml (tracked in git); the .xcodeproj is gitignored and regenerated.
 # This means contributors never fight over .pbxproj merge conflicts.
 ios_xcode:
@@ -156,17 +156,17 @@ ios_xcode:
 		echo "❌ xcodegen missing — install with: brew install xcodegen"; \
 		exit 1; \
 	}
-	@echo "→ Generating LocalWhisperMobile.xcodeproj..."
+	@echo "→ Generating TalkingMobile.xcodeproj..."
 	@xcodegen generate --spec project.yml --quiet
-	@echo "  ✅ LocalWhisperMobile.xcodeproj generated"
+	@echo "  ✅ TalkingMobile.xcodeproj generated"
 
 # Compile the iOS scheme against the iPhone 15 simulator. Smoke test that
 # the Xcode project + Mobile/ files + shared Services all compile together.
 # Does NOT run on a device.
 ios_build: ios_xcode
 	@echo "→ Building iOS scheme for iPhone 15 simulator..."
-	@xcodebuild -project LocalWhisperMobile.xcodeproj \
-		-scheme LocalWhisperMobile \
+	@xcodebuild -project TalkingMobile.xcodeproj \
+		-scheme TalkingMobile \
 		-destination 'platform=iOS Simulator,name=iPhone 15' \
 		-quiet build
 
@@ -178,7 +178,7 @@ TAP_PATH ?= ../homebrew-apps
 # One-time setup. Idempotent — re-runnable, skips what's already done.
 # Installs gh + create-dmg via brew, verifies auth, generates the DMG
 # background asset if missing, and creates a persistent self-signed
-# code-signing identity ("LocalWhisper Dev") in the login keychain so
+# code-signing identity ("Talking Dev") in the login keychain so
 # TCC permissions (Accessibility, Microphone, etc.) survive rebuilds.
 # Without this identity, every `make app` produces an ad-hoc signature
 # that macOS treats as a brand-new app — orphaning the prior grant.
@@ -192,7 +192,7 @@ setup:
 	@echo "→ Generating DMG background if missing..."
 	@test -f assets/dmg_background.png || \
 		(mkdir -p assets && swift scripts/make-dmg-background.swift assets/dmg_background.png)
-	@echo "→ Ensuring 'LocalWhisper Dev' code-signing identity exists..."
+	@echo "→ Ensuring 'Talking Dev' code-signing identity exists..."
 	@bash scripts/ensure-dev-signing-identity.sh
 	@echo "  ✅ Setup complete"
 

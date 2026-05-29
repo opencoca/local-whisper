@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-# release_all.sh — Build LocalWhisper release artifacts and publish.
+# release_all.sh — Build Sage.is Talking release artifacts and publish.
 #
 # Mirrors the Startr canonical pattern (see /Users/somma/bin/TodoScope/scripts/release_all.sh).
 #
@@ -35,7 +35,7 @@ REPO_URL=$(git remote get-url origin \
 REPO_SLUG=$(echo "$REPO_URL" | sed -E 's|^https://github.com/||')
 
 echo ""
-echo "  🎙️  LocalWhisper Release — ${TAG}"
+echo "  🎙️  Talking Release — ${TAG}"
 echo "  =================================="
 echo ""
 
@@ -46,17 +46,17 @@ command -v gh >/dev/null         || { echo "❌ gh missing — run 'make setup'"
 command -v create-dmg >/dev/null || { echo "❌ create-dmg missing — run 'make setup'"; exit 1; }
 gh auth status >/dev/null 2>&1   || { echo "❌ gh not authenticated — run 'gh auth login'"; exit 1; }
 test -d "$TAP_PATH/Casks"        || { echo "❌ $TAP_PATH/Casks not found (set TAP_PATH=...)"; exit 1; }
-test -f "$TAP_PATH/Casks/local-whisper.rb" || { echo "❌ cask file missing in tap"; exit 1; }
+test -f "$TAP_PATH/Casks/talking.rb" || { echo "❌ cask file missing in tap"; exit 1; }
 test -f "$PROJECT_DIR/assets/dmg_background.png" || { echo "❌ DMG background missing — run 'make setup'"; exit 1; }
 echo "  ✅ Tools, auth, and tap all present"
 
 # --- 2. Build the artifacts (idempotent: overwrites dist/) ---
 echo ""
-echo "→ Building LocalWhisper ${TAG}..."
+echo "→ Building Talking ${TAG}..."
 make app VERSION="${VERSION}"
 
-DMG="dist/LocalWhisper-${VERSION}.dmg"
-ZIP="dist/LocalWhisper-${VERSION}.zip"
+DMG="dist/Talking-${VERSION}.dmg"
+ZIP="dist/Talking-${VERSION}.zip"
 test -f "$DMG" || { echo "❌ DMG missing after build: $DMG"; exit 1; }
 test -f "$ZIP" || { echo "❌ ZIP missing after build: $ZIP"; exit 1; }
 echo "  ✅ Built $(basename "$DMG") + $(basename "$ZIP")"
@@ -71,7 +71,7 @@ if gh release view --repo "$REPO_SLUG" "$TAG" >/dev/null 2>&1; then
 else
     echo "→ Creating GitHub Release: $TAG"
     gh release create --repo "$REPO_SLUG" "$TAG" \
-        --title "LocalWhisper $TAG" \
+        --title "Talking $TAG" \
         --generate-notes \
         "$DMG" "$ZIP"
 fi
@@ -84,15 +84,15 @@ echo ""
 echo "→ Updating brew cask in $TAP_PATH..."
 SHA=$(shasum -a 256 "$DMG" | awk '{print $1}')
 # macOS sed: BSD syntax requires '' after -i.
-sed -i '' "s/^  version \".*\"/  version \"${VERSION}\"/" "$TAP_PATH/Casks/local-whisper.rb"
-sed -i '' "s/^  sha256 .*/  sha256 \"${SHA}\"/"          "$TAP_PATH/Casks/local-whisper.rb"
+sed -i '' "s/^  version \".*\"/  version \"${VERSION}\"/" "$TAP_PATH/Casks/talking.rb"
+sed -i '' "s/^  sha256 .*/  sha256 \"${SHA}\"/"          "$TAP_PATH/Casks/talking.rb"
 
-if (cd "$TAP_PATH" && git diff --quiet Casks/local-whisper.rb); then
+if (cd "$TAP_PATH" && git diff --quiet Casks/talking.rb); then
     echo "  ⏭  Cask already at ${TAG} with matching SHA — nothing to commit"
 else
     (cd "$TAP_PATH" \
-        && git add Casks/local-whisper.rb \
-        && git commit -m "local-whisper: bump to ${TAG}" \
+        && git add Casks/talking.rb \
+        && git commit -m "talking: bump to ${TAG}" \
         && git push)
     echo "  ✅ Cask bumped + pushed"
 fi
@@ -100,10 +100,10 @@ fi
 # --- 5. Final summary — copy-paste ready ---
 echo ""
 echo "  =================================="
-echo "  🎙️  LocalWhisper ${TAG} — Shipped!"
+echo "  🎙️  Talking ${TAG} — Shipped!"
 echo "  =================================="
 echo ""
 echo "  Release:    ${RELEASE_URL:-${REPO_URL}/releases/tag/${TAG}}"
-echo "  Install:    brew install --cask sage-is/apps/local-whisper"
-echo "  Direct DMG: ${REPO_URL}/releases/download/${TAG}/LocalWhisper-${VERSION}.dmg"
+echo "  Install:    brew install --cask sage-is/apps/talking"
+echo "  Direct DMG: ${REPO_URL}/releases/download/${TAG}/Talking-${VERSION}.dmg"
 echo ""

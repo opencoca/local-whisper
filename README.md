@@ -1,8 +1,8 @@
-# LocalWhisper
+# Sage.is Talking
 
 <p align="center">
-  <strong>Local voice-to-text for macOS</strong><br>
-  100% offline • Apple Silicon optimized • Menu bar app
+  <strong>Two-way local voice for macOS</strong><br>
+  100% offline transcription and speech • Apple Silicon optimized • Menu bar app
 </p>
 
 <p align="center">
@@ -13,14 +13,21 @@
 
 ---
 
-Hold a key, speak, release — text shows up wherever you were typing. Everything runs on your Mac. Nothing leaves it.
+Hold a key, speak, release — text shows up wherever you were typing.
+Hit another key, select text, and your Mac reads it back. Drag an
+audio file in and watch the transcript stream into a big window.
+Everything runs on your Mac. Nothing leaves it.
+
+> *Sage.is Talking* was previously named *LocalWhisper*. The codebase
+> repo is still at `opencoca/local-whisper`; the cask is
+> `sage-is/apps/talking`.
 
 ## Install
 
 ### From DMG (recommended)
 
 1. Download the latest `.dmg` from [Releases](https://github.com/opencoca/local-whisper/releases/latest)
-2. Drag **LocalWhisper** to Applications
+2. Drag **Sage.is Talking** to Applications
 3. Open it and grant **Microphone**, **Accessibility**, and **Input Monitoring** permissions
 
 > First launch: right-click → Open to get past the unidentified developer warning.
@@ -37,15 +44,21 @@ Grant **Microphone**, **Accessibility**, and **Input Monitoring** permissions wh
 
 ## Use
 
-Hold `Ctrl+Shift+Space` to record. Release to transcribe. Text is pasted into whatever you were typing in.
+- **Transcribe** — hold `Ctrl+Shift+Space`, speak, release. Text is pasted into whatever you were typing in.
+- **Speak** — press `Ctrl+Option+Shift+Space` to read the current selection (or clipboard) aloud. Use the popover text field for typed input, drag in `.txt`/`.md`/`.rtf`/`.pdf`, or paste a URL.
+- **Transcribe a file** — drag an audio or video file onto the app icon (or use *Transcribe File…*); the transcript streams into a large window.
+- **Save audio** — *Save Last Recording…* keeps the audio you just dictated; *Save Speech As…* saves the synthesized version. Both produce `.wav` (PCM) or `.m4a` (AAC).
+- **Read along** — while speech plays, the large window shows the text with the current word highlighted (font-size, contrast, and floating toggles all apply).
 
 ## Features
 
-- Global hotkey — hold to record, release to transcribe
-- 🔒 100% offline — no audio leaves your Mac
-- Fast — CoreML and Neural Engine on Apple Silicon
+- Global hotkeys — record, live transcription, speak
+- 🔒 100% offline — no audio or text leaves your Mac
+- Fast — CoreML and Neural Engine on Apple Silicon (WhisperKit for transcription; AVSpeechSynthesizer for speech, including the Siri-quality Premium/Enhanced voices once installed via *System Settings → Accessibility → Spoken Content*)
 - Auto-inject — transcribed text lands in the focused field
 - Custom vocabulary — teach the model your names, brands, and jargon
+- Drag-to-transcribe — wav/mp3/m4a/mp4/aac/flac/aiff/caf/ogg/opus all work
+- Audio export — both your captured recordings *and* synthesized speech
 
 ## Requirements
 
@@ -55,11 +68,11 @@ Hold `Ctrl+Shift+Space` to record. Release to transcribe. Text is pasted into wh
 
 ## Configuration
 
-Click the menu bar icon to change the hotkey, pick a model (tiny → large-v3), or add custom vocabulary.
+Click the menu bar icon to change the hotkey, pick a model (tiny → large-v3), pick a voice, or add custom vocabulary.
 
 Custom vocabulary lives in Settings → Custom Vocabulary. The model treats it as spelling hints, so larger models respond better.
 
-![LocalWhisper Settings](docs/images/settings.png)
+![Sage.is Talking Settings](docs/images/settings.png)
 
 ## Documentation
 
@@ -81,3 +94,4 @@ The combined work ships under AGPL-3.0. Modify it, distribute it, or run it as a
 
 - [WhisperKit](https://github.com/argmaxinc/WhisperKit) — Swift Whisper with CoreML
 - [OpenAI Whisper](https://github.com/openai/whisper) — original model
+- [LocalWhisper](https://github.com/t2o2/LocalWhisper) — the pre-fork project this app is built on (MIT)

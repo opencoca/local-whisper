@@ -2,24 +2,24 @@
 import PackageDescription
 
 let package = Package(
-    name: "LocalWhisper",
+    name: "Talking",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "LocalWhisper", targets: ["LocalWhisper"])
+        .executable(name: "Talking", targets: ["Talking"])
     ],
     dependencies: [
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.9.0")
     ],
     targets: [
         .executableTarget(
-            name: "LocalWhisper",
+            name: "Talking",
             dependencies: [
                 "WhisperKit"
             ],
-            path: "LocalWhisper",
-            exclude: ["LocalWhisper.entitlements", "Mobile"],
+            path: "Talking",
+            exclude: ["Talking.entitlements", "Mobile"],
             resources: [
                 .copy("Resources/AppIcon.icns")
             ]

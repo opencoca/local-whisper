@@ -1,16 +1,16 @@
 # XcodeGen spec for the iOS / iPadOS app.
 #
-# Generates `LocalWhisperMobile.xcodeproj`. Run via `make ios_xcode` (or
+# Generates `TalkingMobile.xcodeproj`. Run via `make ios_xcode` (or
 # `make ios` to also download the bundled Whisper model). The .xcodeproj
 # itself is gitignored — this YAML is the source of truth.
 #
 # Why XcodeGen: contributors never have to resolve .pbxproj merge conflicts,
 # and the project structure is reviewable in plain text instead of binary.
 
-name: LocalWhisperMobile
+name: TalkingMobile
 
 options:
-  bundleIdPrefix: com.localwhisper
+  bundleIdPrefix: is.sage
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
@@ -24,7 +24,7 @@ packages:
     from: 0.9.0
 
 targets:
-  LocalWhisperMobile:
+  TalkingMobile:
     type: application
     platform: iOS
     # Universal: iPhone + iPad share one binary. Stage Manager / split-view
@@ -34,17 +34,17 @@ targets:
     deploymentTarget: "17.0"
 
     # Shared Swift files (compiled into both macOS Package.swift and this
-    # iOS target) live under LocalWhisper/. We explicitly list the iOS-safe
-    # subset rather than pulling all of LocalWhisper/ — that's how we keep
+    # iOS target) live under Talking/. We explicitly list the iOS-safe
+    # subset rather than pulling all of Talking/ — that's how we keep
     # AppKit/CGEvent files out of the iOS build.
     sources:
-      - path: LocalWhisper/Mobile
+      - path: Talking/Mobile
         # Everything in Mobile/ is iOS-only by design.
-      - path: LocalWhisper/Services/TranscriptionService.swift
-      - path: LocalWhisper/Services/AudioCaptureService.swift
-      - path: LocalWhisper/Services/LiveTranscriptionService.swift
-      - path: LocalWhisper/Models/AudioData.swift
-      - path: LocalWhisper/Models/TranscriptionState.swift
+      - path: Talking/Services/TranscriptionService.swift
+      - path: Talking/Services/AudioCaptureService.swift
+      - path: Talking/Services/LiveTranscriptionService.swift
+      - path: Talking/Models/AudioData.swift
+      - path: Talking/Models/TranscriptionState.swift
 
     dependencies:
       - package: WhisperKit
@@ -54,10 +54,10 @@ targets:
     # the generated file — it gets clobbered every `make ios_xcode`. The
     # *source of truth* for plist content is this YAML.
     info:
-      path: LocalWhisper/Mobile/Info.plist
+      path: Talking/Mobile/Info.plist
       properties:
-        CFBundleDisplayName: LocalWhisper
-        CFBundleShortVersionString: "1.1.0"
+        CFBundleDisplayName: Talking
+        CFBundleShortVersionString: "1.2.0"
         CFBundleVersion: "1"
         LSRequiresIPhoneOS: true
         NSMicrophoneUsageDescription: "Used to record your voice for offline transcription. Audio never leaves your device."
@@ -75,13 +75,14 @@ targets:
 
     settings:
       base:
-        # Personal Team can't claim `com.localwhisper.app` (already
-        # registered to another team on Apple's portal). Using an
-        # alexandersomma-owned namespace for dev testing. When we
-        # rebrand to Sage.is and move to a paid Developer Program,
-        # this becomes the final bundle ID (e.g. `is.sage.talk`).
-        PRODUCT_BUNDLE_IDENTIFIER: com.alexandersomma.localwhisper
-        MARKETING_VERSION: "1.1.0"
+        # Free Apple Developer Personal Team can't claim brand-aligned
+        # bundle IDs that other developers may have registered. Using an
+        # alexandersomma-owned namespace for dev testing. When we move to
+        # a paid Developer Program under Sage.is, this becomes the final
+        # bundle ID `is.sage.talking` (matches the macOS app per the
+        # v1.2.0 rebrand).
+        PRODUCT_BUNDLE_IDENTIFIER: com.alexandersomma.talking
+        MARKETING_VERSION: "1.2.0"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"   # iPhone + iPad
         SWIFT_VERSION: "5.9"

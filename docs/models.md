@@ -1,6 +1,6 @@
 # Model Guide
 
-LocalWhisper uses [WhisperKit](https://github.com/argmaxinc/WhisperKit), which provides optimized CoreML models for Apple Silicon.
+Sage.is Talking uses [WhisperKit](https://github.com/argmaxinc/WhisperKit), which provides optimized CoreML models for Apple Silicon.
 
 ## Available Models
 
@@ -41,7 +41,7 @@ How long you'll wait after releasing the record button:
 
 ## Changing Models
 
-1. Click the LocalWhisper icon in the menu bar
+1. Click the Talking icon in the menu bar
 2. Click ⚙️ Settings (or the gear icon)
 3. Go to **Model** tab
 4. Select your preferred model

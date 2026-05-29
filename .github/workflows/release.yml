@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 env:
-  APP_NAME: LocalWhisper
+  APP_NAME: Talking
 
 jobs:
   release:

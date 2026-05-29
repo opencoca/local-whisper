@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Ensures a persistent self-signed code-signing identity named
-# "LocalWhisper Dev" exists in the user's login keychain. Idempotent —
+# "Talking Dev" exists in the user's login keychain. Idempotent —
 # re-running is a no-op if the identity is already present.
 #
 # Why: macOS keys TCC entries (Accessibility, Microphone, etc.) by the
@@ -13,10 +13,16 @@
 #
 # The cert is per-machine and not committed to git. Each contributor runs
 # this once via `make setup`.
+#
+# Back-compat: if the legacy "LocalWhisper Dev" identity is present from a
+# pre-rebrand build, it's left alone — the new "Talking Dev" identity is
+# created alongside it. Releases built after the rebrand sign with the
+# new identity; older dist/LocalWhisper.app bundles continue to verify
+# against the old one until they're rebuilt.
 
 set -euo pipefail
 
-IDENTITY_NAME="LocalWhisper Dev"
+IDENTITY_NAME="Talking Dev"
 KEYCHAIN="login.keychain"
 
 # Idempotency: if a code-signing identity with this CN already exists,
@@ -24,7 +30,7 @@ KEYCHAIN="login.keychain"
 # identities, which excludes self-signed certs — so we must NOT pass -v
 # here, or we'd recreate the cert on every run and accumulate duplicates.
 # The output format is one match per line:
-#   2) ABCDEF1234... "LocalWhisper Dev" (CSSMERR_TP_NOT_TRUSTED)
+#   2) ABCDEF1234... "Talking Dev" (CSSMERR_TP_NOT_TRUSTED)
 if security find-identity -p codesigning "$KEYCHAIN" 2>/dev/null \
     | grep -q "\"$IDENTITY_NAME\""; then
     echo "  ✓ '$IDENTITY_NAME' already in $KEYCHAIN"
@@ -70,7 +76,7 @@ openssl req -newkey rsa:2048 -nodes \
 #   2. macOS `security import` refuses PKCS#12 files with empty passwords.
 #      Use a dummy non-empty password — its strength is irrelevant because
 #      the file lives in $TMPDIR for milliseconds before being deleted.
-P12_PASS="lwd-transient-passphrase"
+P12_PASS="tlk-transient-passphrase"
 openssl pkcs12 -export -legacy \
     -in "$TMPDIR/cert.pem" \
     -inkey "$TMPDIR/key.pem" \
