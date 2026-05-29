@@ -95,12 +95,13 @@ actor SpeakService {
     }
 
     /// Stop the active utterance immediately. The current `speak(...)`
-    /// continuation resolves as a successful return (cancellation is not
-    /// an error for the caller). Same poka-yoke as `speak`'s preempt:
-    /// we resolve + clear the active continuation BEFORE asking the
-    /// synth to cancel, so the late-arriving didCancel sees nil and is
-    /// a no-op. Otherwise a stop()→start() race would let the prior
-    /// didCancel resolve the new utterance's continuation.
+    /// caller's `try await` returns synchronously from here (we resume
+    /// its continuation directly before asking the synth to cancel),
+    /// so a stop()→start() race in the coordinator can't let the
+    /// prior didCancel resolve the new utterance's continuation. The
+    /// late-arriving didCancel sees activeContinuation == nil and is
+    /// a harmless no-op. Cancellation remains a successful return per
+    /// the documented `speak()` contract.
     func stop() {
         let prior = activeContinuation
         activeContinuation = nil

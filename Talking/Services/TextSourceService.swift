@@ -14,6 +14,8 @@ actor TextSourceService {
     /// Resolve `source` to a string. Returns nil when the source
     /// resolves to empty (no selection, empty clipboard, file with no
     /// text) — callers usually fall back to a different source.
+    /// Whitespace-only inputs are treated as empty so the synth
+    /// doesn't speak silence and immediately go idle.
     func resolve(_ source: SpeakSource) async throws -> String? {
         switch source {
         case .selection:
@@ -21,7 +23,7 @@ actor TextSourceService {
         case .clipboard:
             return readClipboard()
         case .typed(let text):
-            return text.isEmpty ? nil : text
+            return nonEmpty(text)
         case .file(let url):
             return try await readFile(at: url)
         case .url(let url):
@@ -32,10 +34,15 @@ actor TextSourceService {
     /// Convenience: try `.selection` first, fall back to `.clipboard`.
     /// What the Speak hotkey actually does most of the time.
     func resolveSelectionOrClipboard() -> String? {
-        if let selected = readSelection(), !selected.isEmpty {
+        if let selected = readSelection() {
             return selected
         }
         return readClipboard()
+    }
+
+    /// Return `nil` for empty / whitespace-only input, else the text.
+    private func nonEmpty(_ text: String) -> String? {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
     }
 
     // MARK: - Selection (Accessibility API)
@@ -67,20 +74,19 @@ actor TextSourceService {
             kAXSelectedTextAttribute as CFString,
             &selectedText
         ) == .success,
-              let text = selectedText as? String,
-              !text.isEmpty
+              let text = selectedText as? String
         else { return nil }
 
-        return text
+        return nonEmpty(text)
     }
 
     // MARK: - Clipboard
 
     private func readClipboard() -> String? {
-        guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else {
+        guard let text = NSPasteboard.general.string(forType: .string) else {
             return nil
         }
-        return text
+        return nonEmpty(text)
     }
 
     // MARK: - File (txt / md / rtf / pdf)
@@ -119,7 +125,17 @@ actor TextSourceService {
     private func readURL(_ url: URL) async throws -> String {
         var request = URLRequest(url: url)
         request.timeoutInterval = 5
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let host = url.host ?? url.absoluteString
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            // Wrap raw NSURLError with the host so the popover shows
+            // "Couldn't reach example.com: The request timed out."
+            // instead of the bare URLSession message.
+            throw TextSourceError.fetchFailed(host, error.localizedDescription)
+        }
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw TextSourceError.httpError(http.statusCode)
         }
@@ -158,6 +174,7 @@ actor TextSourceService {
 enum TextSourceError: LocalizedError {
     case cannotReadFile(String)
     case httpError(Int)
+    case fetchFailed(String, String)
 
     var errorDescription: String? {
         switch self {
@@ -165,6 +182,8 @@ enum TextSourceError: LocalizedError {
             return "Could not read file: \(name)"
         case .httpError(let code):
             return "URL fetch returned HTTP \(code)"
+        case .fetchFailed(let host, let underlying):
+            return "Couldn't reach \(host): \(underlying)"
         }
     }
 }

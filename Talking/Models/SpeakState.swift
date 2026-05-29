@@ -13,7 +13,11 @@ enum SpeakState: Equatable, CustomStringConvertible {
     case idle
     case preparing
     case speaking(progress: Double)
-    case paused
+    /// Associated progress carries the most-recent value from the
+    /// preceding `.speaking` so `resumeSpeak` doesn't snap the
+    /// progress bar back to 0 while waiting for the next willSpeak
+    /// callback to fire.
+    case paused(progress: Double)
     case error(String)
 
     var description: String {
@@ -24,8 +28,8 @@ enum SpeakState: Equatable, CustomStringConvertible {
             return "Preparing..."
         case .speaking(let progress):
             return "Speaking... \(Int(progress * 100))%"
-        case .paused:
-            return "Paused"
+        case .paused(let progress):
+            return "Paused at \(Int(progress * 100))%"
         case .error(let message):
             return "Error: \(message)"
         }
@@ -40,11 +44,23 @@ enum SpeakState: Equatable, CustomStringConvertible {
         }
     }
 
+    /// 0...1 progress when the state carries one; otherwise nil.
+    var progress: Double? {
+        switch self {
+        case .speaking(let p), .paused(let p):
+            return p
+        default:
+            return nil
+        }
+    }
+
     static func == (lhs: SpeakState, rhs: SpeakState) -> Bool {
         switch (lhs, rhs) {
-        case (.idle, .idle), (.preparing, .preparing), (.paused, .paused):
+        case (.idle, .idle), (.preparing, .preparing):
             return true
         case (.speaking(let a), .speaking(let b)):
+            return a == b
+        case (.paused(let a), .paused(let b)):
             return a == b
         case (.error(let a), .error(let b)):
             return a == b

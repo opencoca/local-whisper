@@ -354,15 +354,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Show (or focus) the large accessibility transcription window. Called
     /// when live mode starts AND the user has opted in via
-    /// `liveLargeWindowEnabled`. Reuses the window object across sessions
-    /// (so the SwiftUI hosting controller doesn't have to rebuild), but
-    /// always re-centers on each open — the user asked for a "stage in the
-    /// middle of the screen" feel, and floating-level handles re-positioning
-    /// for users who do want it elsewhere.
+    /// `liveLargeWindowEnabled`, and from the v1.2.0 speak lane via
+    /// `.openTalkingLargeWindow`. The window is created once and
+    /// reused — the SwiftUI hosting controller doesn't rebuild.
+    ///
+    /// `center()` runs only on creation now. The v1.2.0 speak lane
+    /// posts `.openTalkingLargeWindow` on *every* startSpeak, so
+    /// re-centering on the reuse path would clobber any manual
+    /// placement (multi-monitor, off-center docking) on every Speak
+    /// click. Multi-screen users put it where they want it once;
+    /// subsequent opens keep the position.
     private func showLargeLiveWindow() {
         if let existing = largeLiveWindow {
             existing.level = appState.liveLargeWindowFloating ? .floating : .normal
-            existing.center()
             existing.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return

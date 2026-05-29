@@ -367,7 +367,10 @@ struct LargeLiveTranscriptionView: View {
                         .foregroundColor(.secondary)
                 }
             case .readAlong:
-                if case .speaking(let progress) = appState.speakState {
+                // Show the percentage in both .speaking and .paused
+                // (the new associated-value .paused carries the saved
+                // progress so the counter doesn't blank on pause).
+                if let progress = appState.speakState.progress {
                     Text("\(Int(progress * 100))%")
                         .font(.system(size: appState.liveLargeWindowFontSize * 0.45,
                                       weight: .regular,
@@ -423,19 +426,23 @@ struct LargeLiveTranscriptionView: View {
 
         // Apply the highlight to the current word range. AVSpeech
         // delivers NSRange against the utterance's UTF-16 view, which
-        // is exactly what NSString uses — we convert into AttributedString
-        // indices via the underlying NSString length count.
+        // is exactly what NSString uses. We bound-check explicitly
+        // (String.Index(utf16Offset:in:) can return indices beyond
+        // text.endIndex on overflow), then convert into
+        // AttributedString.Index via the failable bridging initializer
+        // — that's the real safety net.
         if let range = appState.readAlongRange,
            range.location >= 0,
-           range.length > 0,
-           let s16start = String.Index(utf16Offset: range.location, in: text) as String.Index?,
-           let s16end = String.Index(utf16Offset: range.location + range.length, in: text) as String.Index?,
-           s16start < text.endIndex, s16end <= text.endIndex,
-           let lower = AttributedString.Index(s16start, within: s),
-           let upper = AttributedString.Index(s16end, within: s) {
-            let highlightRange = lower..<upper
-            s[highlightRange].backgroundColor = Color.yellow.opacity(0.35)
-            s[highlightRange].foregroundColor = .primary
+           range.length > 0 {
+            let s16start = String.Index(utf16Offset: range.location, in: text)
+            let s16end = String.Index(utf16Offset: range.location + range.length, in: text)
+            if s16start < text.endIndex, s16end <= text.endIndex,
+               let lower = AttributedString.Index(s16start, within: s),
+               let upper = AttributedString.Index(s16end, within: s) {
+                let highlightRange = lower..<upper
+                s[highlightRange].backgroundColor = Color.yellow.opacity(0.35)
+                s[highlightRange].foregroundColor = .primary
+            }
         }
 
         return s

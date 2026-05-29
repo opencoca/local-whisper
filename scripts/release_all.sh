@@ -46,7 +46,12 @@ command -v gh >/dev/null         || { echo "❌ gh missing — run 'make setup'"
 command -v create-dmg >/dev/null || { echo "❌ create-dmg missing — run 'make setup'"; exit 1; }
 gh auth status >/dev/null 2>&1   || { echo "❌ gh not authenticated — run 'gh auth login'"; exit 1; }
 test -d "$TAP_PATH/Casks"        || { echo "❌ $TAP_PATH/Casks not found (set TAP_PATH=...)"; exit 1; }
-test -f "$TAP_PATH/Casks/talking.rb" || { echo "❌ cask file missing in tap"; exit 1; }
+test -f "$TAP_PATH/Casks/talking.rb" || { \
+    echo "❌ Casks/talking.rb missing in $TAP_PATH"; \
+    echo "   Rename Casks/local-whisper.rb → Casks/talking.rb (and bump"; \
+    echo "   name/url/sha to the new identity) before running release_all."; \
+    exit 1; \
+}
 test -f "$PROJECT_DIR/assets/dmg_background.png" || { echo "❌ DMG background missing — run 'make setup'"; exit 1; }
 echo "  ✅ Tools, auth, and tap all present"
 

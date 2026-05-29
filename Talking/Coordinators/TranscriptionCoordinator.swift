@@ -621,6 +621,13 @@ final class TranscriptionCoordinator: ObservableObject {
               let speakService,
               let textSourceService else { return }
 
+        // Set .preparing BEFORE the resolve so URL fetch + file decode
+        // are visible to the user — without this, the popover and
+        // large window stay on .idle for the duration of the network
+        // call, with no indication anything is happening.
+        appState.speakState = .preparing
+        appState.errorMessage = nil
+
         // Resolve the source.
         let resolved: String?
         do {
@@ -631,6 +638,7 @@ final class TranscriptionCoordinator: ObservableObject {
             return
         }
         guard let text = resolved, !text.isEmpty else {
+            appState.speakState = .idle
             appState.errorMessage = "Nothing to speak from this source"
             return
         }
@@ -638,8 +646,6 @@ final class TranscriptionCoordinator: ObservableObject {
         // Populate read-along + open the modal if the user wants it.
         appState.readAlongText = text
         appState.readAlongRange = nil
-        appState.speakState = .preparing
-        appState.errorMessage = nil
 
         if appState.showReadAlongWindow {
             // The AppDelegate-owned large window observes
@@ -666,33 +672,39 @@ final class TranscriptionCoordinator: ObservableObject {
         }
     }
 
-    /// Pause an in-flight utterance at the next word boundary.
+    /// Pause an in-flight utterance at the next word boundary. Works
+    /// from `.preparing` too — the synth's preferred-rate voices
+    /// occasionally load slowly enough that a quick Pause click lands
+    /// before the first willSpeak yield has flipped state to
+    /// `.speaking`.
     func pauseSpeak() async {
         guard let speakService, let appState else { return }
         await speakService.pause()
-        // The synth's pause/resume don't fire didStart/didFinish, so
-        // we move the high-level state ourselves. The current progress
-        // value lives in `speakState`'s associated value already.
-        if case .speaking(let progress) = appState.speakState {
-            appState.speakState = .paused
-            // Preserve progress by leaving the field as-is conceptually;
-            // .paused is the new top-level case but the popover/large
-            // window read progress from elsewhere when needed.
-            _ = progress
+        let progress = appState.speakState.progress ?? 0
+        if appState.speakState.isActive {
+            appState.speakState = .paused(progress: progress)
         }
     }
 
-    /// Resume a paused utterance.
+    /// Resume a paused utterance. Restores the saved progress instead
+    /// of snapping to 0 — the read-along view's percentage display
+    /// stays at the right value until the next willSpeak yield arrives.
     func resumeSpeak() async {
         guard let speakService, let appState else { return }
         await speakService.resume()
-        if appState.speakState == .paused {
-            appState.speakState = .speaking(progress: 0)
+        if case .paused(let progress) = appState.speakState {
+            appState.speakState = .speaking(progress: progress)
         }
     }
 
-    /// Stop an in-flight or paused utterance. Returns once the synth
-    /// has reported didCancel and the read-along state is cleared.
+    /// Stop an in-flight or paused utterance. Returns once
+    /// `SpeakService.stop()` has resumed the prior `speak()` call's
+    /// continuation (which happens synchronously inside `stop()` — see
+    /// that method's contract), so when this method returns the
+    /// caller's `try await` chain has already unwound and any state
+    /// writes from `startSpeak` have settled. A subsequent
+    /// `startSpeak` can therefore set `.preparing` without clobber
+    /// risk from a delayed `.idle` write.
     func stopSpeak() async {
         guard let speakService, let appState else { return }
         await speakService.stop()
