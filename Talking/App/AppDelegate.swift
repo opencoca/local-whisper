@@ -226,6 +226,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
+        // v1.2.0 speak lane: when the speak state transitions back to
+        // .idle (natural finish, Stop button, or stopSpeak() from any
+        // path) and live transcription isn't running, hide the read-
+        // along window. Without this the window would stay on screen
+        // showing the empty "Stopped / Speak now…" live view after
+        // every utterance — confusing.
+        appState.$speakState
+            .receive(on: DispatchQueue.main)
+            .map(\.isActive)
+            .removeDuplicates()
+            .sink { [weak self] active in
+                guard !active else { return }
+                guard let self else { return }
+                // Don't close a window the live lane owns. The live
+                // observer above is the only authority for the live
+                // path's window lifecycle.
+                guard !self.appState.isLiveActive else { return }
+                self.hideLargeLiveWindow()
+            }
+            .store(in: &cancellables)
+
         // Restart the HotkeyManager whenever accessibility becomes granted.
         //
         // `HotkeyManager.start()` checks `AXIsProcessTrusted()` once and

@@ -23,7 +23,7 @@ actor TextSourceService {
         case .typed(let text):
             return text.isEmpty ? nil : text
         case .file(let url):
-            return try readFile(at: url)
+            return try await readFile(at: url)
         case .url(let url):
             return try await readURL(url)
         }
@@ -85,7 +85,7 @@ actor TextSourceService {
 
     // MARK: - File (txt / md / rtf / pdf)
 
-    private func readFile(at url: URL) throws -> String? {
+    private func readFile(at url: URL) async throws -> String? {
         let ext = url.pathExtension.lowercased()
         switch ext {
         case "pdf":
@@ -102,7 +102,7 @@ actor TextSourceService {
             return attr.string
         case "html", "htm":
             let data = try Data(contentsOf: url)
-            return try htmlToString(data: data)
+            return try await htmlToString(data: data)
         default:
             // Plain text fall-through covers .txt, .md, anything else
             // the user drops in. Try UTF-8 first, fall back to the
@@ -126,7 +126,7 @@ actor TextSourceService {
         // Heuristic: try HTML strip first; if it produces no useful
         // text, return the raw decoded body so plain-text URLs still
         // work. Article-mode reader is a v1.x candidate.
-        if let stripped = try? htmlToString(data: data), !stripped.isEmpty {
+        if let stripped = try? await htmlToString(data: data), !stripped.isEmpty {
             return stripped
         }
         return String(data: data, encoding: .utf8) ?? ""
@@ -135,30 +135,21 @@ actor TextSourceService {
     // MARK: - HTML → plain text
 
     /// `NSAttributedString` HTML loading touches WebKit internals that
-    /// historically required the main thread on macOS. Hop there and
-    /// strip to `.string` for the plain text we hand to the synth.
-    private func htmlToString(data: Data) throws -> String {
+    /// historically required the main thread on macOS. Hop via
+    /// `MainActor.run` which *suspends* the actor (releasing its
+    /// cooperative-pool thread) instead of blocking on a semaphore.
+    /// The earlier semaphore implementation pinned a cooperative
+    /// thread and would deadlock if this actor were ever re-isolated
+    /// to the main actor — fixed now.
+    private func htmlToString(data: Data) async throws -> String {
         let options: [NSAttributedString.DocumentReadingOptionKey: Any] = [
             .documentType: NSAttributedString.DocumentType.html,
             .characterEncoding: String.Encoding.utf8.rawValue,
         ]
-        // `NSAttributedString(data:options:documentAttributes:)` is a
-        // synchronous initializer but must run on the main thread for
-        // HTML on macOS. The actor isolates this whole service to one
-        // queue already; we synchronously bounce to main for the call.
-        var result: Result<String, Error>!
-        let semaphore = DispatchSemaphore(value: 0)
-        DispatchQueue.main.async {
-            do {
-                let attr = try NSAttributedString(data: data, options: options, documentAttributes: nil)
-                result = .success(attr.string.trimmingCharacters(in: .whitespacesAndNewlines))
-            } catch {
-                result = .failure(error)
-            }
-            semaphore.signal()
+        return try await MainActor.run {
+            let attr = try NSAttributedString(data: data, options: options, documentAttributes: nil)
+            return attr.string.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        semaphore.wait()
-        return try result.get()
     }
 }
 

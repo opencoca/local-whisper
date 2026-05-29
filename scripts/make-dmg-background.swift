@@ -2,7 +2,7 @@
 //
 // make-dmg-background.swift
 //
-// One-shot Core Graphics PNG generator for the LocalWhisper DMG background.
+// One-shot Core Graphics PNG generator for the Sage.is Talking DMG background.
 // Output: 540×380 PNG with a soft gradient, "Drag → Applications" guidance,
 // and a subtle arrow glyph between the icon positions.
 //
@@ -82,7 +82,7 @@ ctx.addLine(to: CGPoint(x: arrowEnd.x - headSize, y: arrowEnd.y - headSize * 0.7
 ctx.strokePath()
 
 // --- Caption text under the arrow ("Drag → Applications") ---
-let caption = "Drag LocalWhisper to Applications"
+let caption = "Drag Sage.is Talking to Applications"
 let fontSize: CGFloat = 13
 let font = CTFontCreateUIFontForLanguage(.system, fontSize, nil)
     ?? CTFontCreateWithName("Helvetica" as CFString, fontSize, nil)
@@ -102,7 +102,7 @@ ctx.textPosition = CGPoint(x: textX, y: textY)
 CTLineDraw(line, ctx)
 
 // --- Title/header at the top ---
-let title = "LocalWhisper"
+let title = "Sage.is Talking"
 let titleFontSize: CGFloat = 22
 let titleFont = CTFontCreateUIFontForLanguage(.system, titleFontSize, nil)
     ?? CTFontCreateWithName("Helvetica-Bold" as CFString, titleFontSize, nil)
