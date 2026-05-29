@@ -17,6 +17,11 @@ struct SettingsView: View {
                     .tag(2)
                 Label("Live Mode", systemImage: "waveform")
                     .tag(3)
+                // v1.2.0 speak lane. Tag 6 (not 4) so the existing
+                // settingsDeepLink = 4 for Permissions keeps working
+                // without a coordinated rewrite of the popover hint.
+                Label("Voice", systemImage: "speaker.wave.2")
+                    .tag(6)
                 Label("Permissions", systemImage: "lock.shield")
                     .tag(4)
                 Label("About", systemImage: "info.circle")
@@ -39,6 +44,8 @@ struct SettingsView: View {
                     PermissionsSettingsView()
                 case 5:
                     AboutView()
+                case 6:
+                    VoiceSettingsView()
                 default:
                     ModelSettingsView()
                 }
@@ -1363,5 +1370,206 @@ struct AboutView: View {
             .padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Voice (v1.2.0)
+
+/// Settings for the v1.2.0 speak lane: voice picker (grouped by
+/// quality tier), rate, pitch, default source for the popover Speak
+/// button, and the read-along window toggle.
+struct VoiceSettingsView: View {
+    @EnvironmentObject var appState: AppState
+    @State private var voices: [AVSpeechSynthesisVoice] = []
+    @State private var samplePlaying: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Voice")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                        Text("Pick the voice Sage.is Talking uses for spoken output. Premium and Enhanced voices appear here once you install them in System Settings → Accessibility → Spoken Content → Manage Voices.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    voicePicker
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Playback")
+                            .font(.headline)
+
+                        rateRow
+                        pitchRow
+
+                        HStack {
+                            Spacer()
+                            Button {
+                                playSample()
+                            } label: {
+                                Label(samplePlaying ? "Playing sample…" : "Play sample", systemImage: "play.fill")
+                            }
+                            .disabled(samplePlaying)
+                        }
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Default source")
+                            .font(.headline)
+
+                        Picker("", selection: $appState.ttsDefaultSource) {
+                            ForEach(AppState.DefaultSpeakSource.allCases, id: \.self) { src in
+                                Text(label(for: src)).tag(src)
+                            }
+                        }
+                        .pickerStyle(.radioGroup)
+                        .labelsHidden()
+
+                        Text("What the Speak button in the popover does when you haven't picked a source explicitly.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Toggle("Show read-along window when speaking", isOn: $appState.showReadAlongWindow)
+                        Text("Opens the large transcription window in read-along mode while playback runs. Font-size, contrast, and floating settings from Live Mode apply.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Speak hotkey")
+                            .font(.headline)
+                        HStack {
+                            Text(HotkeyManager.shared.speakShortcutString)
+                                .font(.system(.body, design: .monospaced))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.secondary.opacity(0.15))
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                            Spacer()
+                            Text("Rebind support coming in v1.x.")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+                .padding(24)
+            }
+        }
+        .onAppear {
+            voices = AVSpeechSynthesisVoice.speechVoices()
+        }
+    }
+
+    // MARK: - Voice picker
+
+    @ViewBuilder
+    private var voicePicker: some View {
+        let grouped = groupedVoices()
+        let hasPremium = grouped[.premium]?.isEmpty == false || grouped[.enhanced]?.isEmpty == false
+
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("Voice", selection: $appState.ttsVoiceID) {
+                Text("System default").tag("")
+                ForEach([AVSpeechSynthesisVoiceQuality.premium, .enhanced, .default], id: \.self) { tier in
+                    if let list = grouped[tier], !list.isEmpty {
+                        Section(qualityLabel(tier)) {
+                            ForEach(list, id: \.identifier) { voice in
+                                Text("\(voice.name) — \(voice.language)").tag(voice.identifier)
+                            }
+                        }
+                    }
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+
+            if !hasPremium {
+                Label("Install Premium or Enhanced voices in System Settings → Accessibility → Spoken Content → Manage Voices for higher-quality speech.", systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func groupedVoices() -> [AVSpeechSynthesisVoiceQuality: [AVSpeechSynthesisVoice]] {
+        Dictionary(grouping: voices, by: { $0.quality })
+            .mapValues { $0.sorted(by: { $0.name < $1.name }) }
+    }
+
+    private func qualityLabel(_ q: AVSpeechSynthesisVoiceQuality) -> String {
+        switch q {
+        case .premium: return "Premium (Siri-quality)"
+        case .enhanced: return "Enhanced"
+        default: return "Default"
+        }
+    }
+
+    // MARK: - Rate & pitch
+
+    private var rateRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Rate")
+                    .frame(width: 80, alignment: .leading)
+                Slider(value: $appState.ttsRate, in: 0...1)
+                Text(String(format: "%.2f", appState.ttsRate))
+                    .font(.system(.body, design: .monospaced))
+                    .frame(width: 50, alignment: .trailing)
+            }
+            Text("0 = slowest, 1 = fastest. Default is 0.5.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    private var pitchRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Pitch")
+                    .frame(width: 80, alignment: .leading)
+                Slider(value: $appState.ttsPitch, in: 0.5...2.0)
+                Text(String(format: "%.2f", appState.ttsPitch))
+                    .font(.system(.body, design: .monospaced))
+                    .frame(width: 50, alignment: .trailing)
+            }
+            Text("0.5 = lower, 2.0 = higher. Default is 1.0.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    // MARK: - Default source label
+
+    private func label(for src: AppState.DefaultSpeakSource) -> String {
+        switch src {
+        case .selectionOrClipboard: return "Selection (fall back to clipboard)"
+        case .clipboard: return "Clipboard"
+        case .typedInput: return "Typed input"
+        }
+    }
+
+    // MARK: - Sample playback
+
+    private func playSample() {
+        samplePlaying = true
+        Task {
+            await appState.coordinator.startSpeak(
+                source: .typed("This is a sample of how the voice sounds at the current rate and pitch.")
+            )
+            samplePlaying = false
+        }
     }
 }
