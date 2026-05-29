@@ -49,11 +49,18 @@ actor SpeakService {
     /// supersedes it. Throws only for upstream configuration errors;
     /// cancellation is a successful return.
     func speak(text: String, voiceID: String?, rate: Float, pitch: Float) async throws {
-        // If another utterance is queued/playing, cancel it so we don't
-        // strand a continuation. The cancel-callback resumes the prior
-        // continuation as a successful return; we replace below.
+        // Preempt any in-flight utterance. Order matters: we MUST resume
+        // and clear `activeContinuation` for the prior call BEFORE the
+        // new `withCheckedThrowingContinuation` assigns its own. The
+        // delegate's didCancel arrives asynchronously and would otherwise
+        // resume *the new* continuation, returning the new speak() call
+        // immediately while audio plays on and leaking the prior
+        // continuation (`SWIFT TASK CONTINUATION MISUSE`).
         if let synth = synthesizer, synth.isSpeaking || synth.isPaused {
+            let prior = activeContinuation
+            activeContinuation = nil
             synth.stopSpeaking(at: .immediate)
+            prior?.resume(returning: ())
         }
 
         let utterance = makeUtterance(text: text, voiceID: voiceID, rate: rate, pitch: pitch)
@@ -81,9 +88,16 @@ actor SpeakService {
 
     /// Stop the active utterance immediately. The current `speak(...)`
     /// continuation resolves as a successful return (cancellation is not
-    /// an error for the caller).
+    /// an error for the caller). Same poka-yoke as `speak`'s preempt:
+    /// we resolve + clear the active continuation BEFORE asking the
+    /// synth to cancel, so the late-arriving didCancel sees nil and is
+    /// a no-op. Otherwise a stop()→start() race would let the prior
+    /// didCancel resolve the new utterance's continuation.
     func stop() {
+        let prior = activeContinuation
+        activeContinuation = nil
         synthesizer?.stopSpeaking(at: .immediate)
+        prior?.resume(returning: ())
     }
 
     /// Synthesize `text` offline (without playing) and return the audio
