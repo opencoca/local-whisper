@@ -4,7 +4,8 @@ import UniformTypeIdentifiers
 
 struct MenuBarView: View {
     @EnvironmentObject var appState: AppState
-    
+    @State private var speakSectionExpanded: Bool = false
+
     var body: some View {
         VStack(spacing: 16) {
             // Header
@@ -44,7 +45,28 @@ struct MenuBarView: View {
                 lastTranscriptionSection
                 Divider()
             }
-            
+
+            // v1.2.0 Speak lane — five-source text-to-speech with
+            // optional offline render-to-file. Always visible so the
+            // feature is discoverable; the user can collapse the
+            // disclosure if they want a tighter popover.
+            DisclosureGroup(isExpanded: $speakSectionExpanded) {
+                SpeakPanel()
+                    .padding(.top, 6)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "speaker.wave.2")
+                    Text("Speak")
+                        .font(.headline)
+                    Spacer()
+                    if appState.speakState.isActive {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+            }
+            Divider()
+
             // Shortcut Info
             shortcutSection
             
@@ -274,9 +296,9 @@ struct MenuBarView: View {
                 Text("Last Transcription")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                
+
                 Spacer()
-                
+
                 if showCopiedFeedback {
                     Text("Copied!")
                         .font(.caption)
@@ -284,7 +306,7 @@ struct MenuBarView: View {
                         .transition(.opacity)
                 }
             }
-            
+
             Button(action: copyTranscriptionToClipboard) {
                 Text(appState.lastTranscription)
                     .font(.body)
@@ -296,10 +318,82 @@ struct MenuBarView: View {
             }
             .buttonStyle(.plain)
             .help("Click to copy to clipboard")
-            
-            Text("Click to copy")
-                .font(.caption2)
-                .foregroundColor(.secondary)
+
+            HStack(spacing: 8) {
+                Text("Click to copy")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                // v1.2.0: speak the just-transcribed text. Useful for
+                // proof-reading dictation. Disabled while another
+                // utterance is already in flight.
+                Button {
+                    Task {
+                        await appState.coordinator.startSpeak(
+                            source: .typed(appState.lastTranscription)
+                        )
+                    }
+                } label: {
+                    Label("Speak", systemImage: "speaker.wave.2")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(appState.speakState.isActive)
+                .help("Read this transcription aloud")
+
+                // v1.2.0: save the audio that produced this transcript.
+                // Enabled only when AppState.lastRecording is in memory
+                // (cleared at the start of the next recording).
+                if let recording = appState.lastRecording {
+                    Button {
+                        saveLastRecording(recording: recording)
+                    } label: {
+                        Label("Save audio (\(durationLabel(recording))s)", systemImage: "square.and.arrow.down")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Write the just-captured audio to .wav or .m4a. Cleared on next recording.")
+                }
+            }
+        }
+    }
+
+    private func durationLabel(_ audio: AudioData) -> String {
+        String(format: "%.1f", audio.duration)
+    }
+
+    /// Run NSSavePanel to write `appState.lastRecording` to disk via
+    /// `AudioExporter`. Same panel both UTIs offered, default `.m4a`.
+    private func saveLastRecording(recording: AudioData) {
+        let savePanel = NSSavePanel()
+        savePanel.allowedContentTypes = [
+            UTType(filenameExtension: "m4a") ?? .audio,
+            UTType(filenameExtension: "wav") ?? .audio,
+        ]
+        savePanel.canCreateDirectories = true
+        let stamp = ISO8601DateFormatter()
+            .string(from: Date())
+            .replacingOccurrences(of: ":", with: "-")
+        let prefix = String(appState.lastTranscription
+            .replacingOccurrences(of: "[^A-Za-z0-9 ]", with: "", options: .regularExpression)
+            .prefix(40))
+            .trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: " ", with: "-")
+        savePanel.nameFieldStringValue = "\((prefix.isEmpty ? "recording" : prefix))-\(stamp).m4a"
+        guard savePanel.runModal() == .OK, let url = savePanel.url else { return }
+        let format: AudioExportFormat = url.pathExtension.lowercased() == "wav" ? .wav : .m4a
+        Task {
+            do {
+                try await appState.coordinator.exportLastRecording(to: url, format: format)
+            } catch {
+                await MainActor.run {
+                    appState.errorMessage = error.localizedDescription
+                }
+            }
         }
     }
     
