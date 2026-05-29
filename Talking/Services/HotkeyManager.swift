@@ -32,13 +32,17 @@ private func hotkeyLogToFile(_ message: String) {
 
 /// Manages global keyboard shortcuts using CGEvent API.
 ///
-/// Supports two independent hotkeys on a single event tap:
+/// Supports three independent hotkeys on a single event tap:
 /// - **Hold** (`keyCode` / `modifiers`, default Ctrl+Shift+Space): fires
 ///   `onKeyDown` / `onKeyUp` as the user holds and releases. Used by the
 ///   batch-recording flow.
 /// - **Live** (`liveKeyCode` / `liveModifiers`, default Ctrl+Option+Space):
 ///   fires `onLiveKeyDown` only. Live transcription is a toggle, so
 ///   `onLiveKeyUp` is intentionally left unwired.
+/// - **Speak** (`speakKeyCode` / `speakModifiers`, default
+///   Ctrl+Option+Shift+Space): fires `onSpeakKeyDown` once per press.
+///   Used by the v1.2.0 speak lane — coordinator resolves selection
+///   or clipboard and starts TTS playback.
 final class HotkeyManager {
     static let shared = HotkeyManager()
 
@@ -50,6 +54,10 @@ final class HotkeyManager {
     private(set) var liveKeyCode: UInt16 = UInt16(kVK_Space)
     private(set) var liveModifiers: CGEventFlags = [.maskControl, .maskAlternate]
 
+    // Speak hotkey (default Ctrl+Option+Shift+Space) — v1.2.0
+    private(set) var speakKeyCode: UInt16 = UInt16(kVK_Space)
+    private(set) var speakModifiers: CGEventFlags = [.maskControl, .maskAlternate, .maskShift]
+
     fileprivate var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var fnKeyMonitor: Any?
@@ -58,9 +66,11 @@ final class HotkeyManager {
     var onKeyDown: (() -> Void)?
     var onKeyUp: (() -> Void)?
     var onLiveKeyDown: (() -> Void)?
+    var onSpeakKeyDown: (() -> Void)?
 
     private var isKeyDown = false
     private var liveIsKeyDown = false
+    private var speakIsKeyDown = false
 
     private init() {}
     
@@ -254,12 +264,30 @@ final class HotkeyManager {
             NSLog("[HotkeyManager] Fn/Globe key detected - keyCode: %d, flags: %llu", currentKeyCode, currentFlags.rawValue)
         }
         
-        // Check whether the current event matches either hotkey.
+        // Check whether the current event matches any hotkey. Speak is
+        // checked BEFORE hold/live so a superset chord (e.g. the speak
+        // default `Ctrl+Option+Shift+Space`) doesn't accidentally trigger
+        // the hold or live lanes whose chords are subsets of it.
+        let hasSpeakModifiers = checkModifiers(currentFlags, against: speakModifiers)
         let hasHoldModifiers = checkModifiers(currentFlags, against: modifiers)
         let hasLiveModifiers = checkModifiers(currentFlags, against: liveModifiers)
 
         switch type {
         case .keyDown:
+            // Speak hotkey — single-press toggle, same shape as live.
+            // Resolves to selection-or-clipboard in the coordinator and
+            // starts AVSpeechSynthesizer playback. v1.2.0+.
+            if currentKeyCode == speakKeyCode && hasSpeakModifiers {
+                if !speakIsKeyDown {
+                    hotkeyLogger.info("Speak hotkey DOWN detected!")
+                    speakIsKeyDown = true
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onSpeakKeyDown?()
+                    }
+                }
+                return true
+            }
+
             // Hold hotkey — fires on press, recording starts; autorepeat keyDowns
             // are coalesced via the `!isKeyDown` guard.
             if currentKeyCode == keyCode && hasHoldModifiers {
@@ -285,8 +313,17 @@ final class HotkeyManager {
                 }
                 return true
             }
-            
+
         case .keyUp:
+            // Speak hotkey — same poka-yoke as live: clear the latch
+            // so the NEXT keyDown is a fresh press, and consume only
+            // if we tracked the down so strays pass through.
+            if currentKeyCode == speakKeyCode && speakIsKeyDown {
+                hotkeyLogger.info("Speak hotkey UP detected (clearing state)")
+                speakIsKeyDown = false
+                return true
+            }
+
             // Hold hotkey — only consume the keyUp if we tracked the keyDown.
             // See the stuck-spacebar commit for why this guard matters: consuming
             // strays leaves the OS thinking the key is still held.
@@ -351,6 +388,10 @@ final class HotkeyManager {
             // is treated as a fresh toggle.
             if liveIsKeyDown && !hasLiveModifiers {
                 liveIsKeyDown = false
+            }
+            // Speak hotkey: same idea.
+            if speakIsKeyDown && !hasSpeakModifiers {
+                speakIsKeyDown = false
             }
 
         default:
@@ -438,12 +479,34 @@ final class HotkeyManager {
             liveModifiers = CGEventFlags(rawValue: savedModifiers)
         }
     }
-    
+
+    /// Update the speak hotkey (v1.2.0+).
+    func setSpeakHotkey(keyCode: UInt16, modifiers: CGEventFlags) {
+        self.speakKeyCode = keyCode
+        self.speakModifiers = modifiers
+        UserDefaults.standard.set(Int(keyCode), forKey: "speakHotkeyKeyCode")
+        UserDefaults.standard.set(modifiers.rawValue, forKey: "speakHotkeyModifiers")
+        hotkeyLogger.info("Speak hotkey updated to: \(self.speakShortcutString)")
+    }
+
+    /// Load saved speak hotkey from UserDefaults
+    func loadSavedSpeakHotkey() {
+        if let savedKeyCode = UserDefaults.standard.object(forKey: "speakHotkeyKeyCode") as? Int {
+            speakKeyCode = UInt16(savedKeyCode)
+        }
+        if let savedModifiers = UserDefaults.standard.object(forKey: "speakHotkeyModifiers") as? UInt64 {
+            speakModifiers = CGEventFlags(rawValue: savedModifiers)
+        }
+    }
+
     /// Get human-readable shortcut string for the hold hotkey.
     var shortcutString: String { format(keyCode: keyCode, modifiers: modifiers) }
 
     /// Get human-readable shortcut string for the live hotkey.
     var liveShortcutString: String { format(keyCode: liveKeyCode, modifiers: liveModifiers) }
+
+    /// Get human-readable shortcut string for the speak hotkey.
+    var speakShortcutString: String { format(keyCode: speakKeyCode, modifiers: speakModifiers) }
 
     private func format(keyCode: UInt16, modifiers: CGEventFlags) -> String {
         var parts: [String] = []
