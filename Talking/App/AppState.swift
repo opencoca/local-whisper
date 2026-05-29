@@ -165,7 +165,91 @@ final class AppState: ObservableObject {
     @Published var liveLargeWindowFloating: Bool {
         didSet { UserDefaults.standard.set(liveLargeWindowFloating, forKey: "liveLargeWindowFloating") }
     }
-    
+
+    // MARK: - v1.2.0 Two-Way Voice — Speak Lane
+    //
+    // Transient runtime state (not persisted):
+
+    /// Current state of the speech-synthesis workflow. Mirrors
+    /// `transcriptionState` for the speak lane.
+    @Published var speakState: SpeakState = .idle
+
+    /// Full text the synthesizer is reading. Drives the read-along
+    /// modal body when `speakState.isActive`.
+    @Published var readAlongText: String = ""
+
+    /// Character range of the *currently spoken* word inside
+    /// `readAlongText`. Updated per word boundary via the SpeakService
+    /// rangeStream (throttled to ~30 updates/sec in the observer task).
+    @Published var readAlongRange: NSRange? = nil
+
+    /// File currently being transcribed (drag-onto-app or *Open File…*).
+    /// Drives the large window header (displayName) and progress bar
+    /// (`fileTranscriptionProgress`). Nil when no file flow is active.
+    @Published var fileTranscriptionSource: FileTranscriptionSource? = nil
+
+    /// 0...1 progress of the in-flight file transcription. Chunk-grained
+    /// (the file is split into ~30 s windows; progress ticks after each).
+    @Published var fileTranscriptionProgress: Double = 0
+
+    /// The most recent capture (hotkey or live) so the user can save it
+    /// via *Save Last Recording…*. Cleared at the start of the next
+    /// recording and on app quit — so the "save audio" affordance only
+    /// shows when there's something concrete to save.
+    @Published var lastRecording: AudioData? = nil
+
+    // Persisted settings:
+
+    /// `AVSpeechSynthesisVoice.identifier` to use for TTS. Empty string
+    /// means "let the synth pick for the system language". Premium /
+    /// Enhanced voices appear here only after the user installs them
+    /// via *System Settings → Accessibility → Spoken Content → Manage
+    /// Voices*.
+    @Published var ttsVoiceID: String {
+        didSet { UserDefaults.standard.set(ttsVoiceID, forKey: "ttsVoiceID") }
+    }
+
+    /// 0.0...1.0 maps onto
+    /// `AVSpeechUtteranceMinimumSpeechRate ... AVSpeechUtteranceMaximumSpeechRate`.
+    /// Default 0.5 = `AVSpeechUtteranceDefaultSpeechRate`-ish.
+    @Published var ttsRate: Double {
+        didSet { UserDefaults.standard.set(ttsRate, forKey: "ttsRate") }
+    }
+
+    /// 0.5...2.0 maps directly onto `AVSpeechUtterance.pitchMultiplier`.
+    /// Default 1.0 = no pitch shift.
+    @Published var ttsPitch: Double {
+        didSet { UserDefaults.standard.set(ttsPitch, forKey: "ttsPitch") }
+    }
+
+    /// Default source for the popover's Speak button when no explicit
+    /// source is supplied. Stored as raw string so the enum's
+    /// associated-value cases don't need a custom Codable.
+    enum DefaultSpeakSource: String, CaseIterable {
+        case selectionOrClipboard
+        case clipboard
+        case typedInput
+    }
+    @Published var ttsDefaultSource: DefaultSpeakSource {
+        didSet { UserDefaults.standard.set(ttsDefaultSource.rawValue, forKey: "ttsDefaultSource") }
+    }
+
+    /// Speak hotkey persistence — parallels the live hotkey pattern.
+    @Published var speakHotkeyKeyCode: UInt16 {
+        didSet { UserDefaults.standard.set(Int(speakHotkeyKeyCode), forKey: "speakHotkeyKeyCode") }
+    }
+    @Published var speakHotkeyModifiers: CGEventFlags {
+        didSet { UserDefaults.standard.set(speakHotkeyModifiers.rawValue, forKey: "speakHotkeyModifiers") }
+    }
+
+    /// When on, the large window opens automatically when the speak
+    /// lane goes active (read-along mode). Off → speech plays without
+    /// surfacing the window. Default on; users who only want speech in
+    /// the background can toggle it off in Settings → Voice.
+    @Published var showReadAlongWindow: Bool {
+        didSet { UserDefaults.standard.set(showReadAlongWindow, forKey: "showReadAlongWindow") }
+    }
+
     // MARK: - Proxy Settings
     @Published var proxyEnabled: Bool {
         didSet { 
@@ -244,6 +328,9 @@ final class AppState: ObservableObject {
     let textInjectionService: TextInjectionService
     let audioMuteService: AudioMuteService
     let liveTranscriptionService: LiveTranscriptionService
+    let speakService: SpeakService
+    let textSourceService: TextSourceService
+    let audioExporter: AudioExporter
     let coordinator: TranscriptionCoordinator
 
     private init() {
@@ -314,6 +401,27 @@ final class AppState: ObservableObject {
         self.liveLargeWindowHighContrast = UserDefaults.standard.object(forKey: "liveLargeWindowHighContrast") as? Bool ?? true
         self.liveLargeWindowFloating = UserDefaults.standard.object(forKey: "liveLargeWindowFloating") as? Bool ?? true
 
+        // v1.2.0 Two-Way Voice settings (persisted)
+        self.ttsVoiceID = UserDefaults.standard.string(forKey: "ttsVoiceID") ?? ""
+        self.ttsRate = UserDefaults.standard.object(forKey: "ttsRate") as? Double ?? 0.5
+        self.ttsPitch = UserDefaults.standard.object(forKey: "ttsPitch") as? Double ?? 1.0
+        if let raw = UserDefaults.standard.string(forKey: "ttsDefaultSource"),
+           let m = DefaultSpeakSource(rawValue: raw) {
+            self.ttsDefaultSource = m
+        } else {
+            self.ttsDefaultSource = .selectionOrClipboard
+        }
+        // Speak hotkey defaults to Ctrl+Option+Shift+Space — the live
+        // hotkey's chord plus Shift, so it's unambiguously different
+        // from both the hold and live keys.
+        self.speakHotkeyKeyCode = UInt16(UserDefaults.standard.object(forKey: "speakHotkeyKeyCode") as? Int ?? kVK_Space)
+        if let raw = UserDefaults.standard.object(forKey: "speakHotkeyModifiers") as? UInt64 {
+            self.speakHotkeyModifiers = CGEventFlags(rawValue: raw)
+        } else {
+            self.speakHotkeyModifiers = [.maskControl, .maskAlternate, .maskShift]
+        }
+        self.showReadAlongWindow = UserDefaults.standard.object(forKey: "showReadAlongWindow") as? Bool ?? true
+
         // Load proxy settings
         self.proxyEnabled = UserDefaults.standard.bool(forKey: "proxyEnabled")
         self.proxyHost = UserDefaults.standard.string(forKey: "proxyHost") ?? "127.0.0.1"
@@ -331,6 +439,9 @@ final class AppState: ObservableObject {
         self.textInjectionService = TextInjectionService()
         self.audioMuteService = AudioMuteService()
         self.liveTranscriptionService = LiveTranscriptionService()
+        self.speakService = SpeakService()
+        self.textSourceService = TextSourceService()
+        self.audioExporter = AudioExporter()
         self.coordinator = TranscriptionCoordinator()
 
         // Inject dependencies after init
@@ -340,7 +451,10 @@ final class AppState: ObservableObject {
             transcriptionService: transcriptionService,
             textInjectionService: textInjectionService,
             audioMuteService: audioMuteService,
-            liveTranscriptionService: liveTranscriptionService
+            liveTranscriptionService: liveTranscriptionService,
+            speakService: speakService,
+            textSourceService: textSourceService,
+            audioExporter: audioExporter
         )
         
         // Observe transcription service state

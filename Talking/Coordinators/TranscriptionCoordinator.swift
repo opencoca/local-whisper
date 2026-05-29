@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import AppKit
 import os.log
+@preconcurrency import AVFoundation
 
 private let logger = Logger(subsystem: "is.sage.talking", category: "Coordinator")
 
@@ -21,7 +22,14 @@ final class TranscriptionCoordinator: ObservableObject {
     private var audioMuteService: AudioMuteService?
     private var liveTranscriptionService: LiveTranscriptionService?
 
+    // v1.2.0 speak lane + audio export.
+    private var speakService: SpeakService?
+    private var textSourceService: TextSourceService?
+    private var audioExporter: AudioExporter?
+
     private var recordingTask: Task<Void, Never>?
+    private var speakStreamTask: Task<Void, Never>?
+    private var speakRangeStreamTask: Task<Void, Never>?
 
     /// Frontmost app captured at live-mode start so we can refocus it
     /// before pasting on stop. Cleared after paste completes.
@@ -33,7 +41,10 @@ final class TranscriptionCoordinator: ObservableObject {
         transcriptionService: TranscriptionService,
         textInjectionService: TextInjectionService,
         audioMuteService: AudioMuteService,
-        liveTranscriptionService: LiveTranscriptionService
+        liveTranscriptionService: LiveTranscriptionService,
+        speakService: SpeakService,
+        textSourceService: TextSourceService,
+        audioExporter: AudioExporter
     ) {
         self.appState = appState
         self.audioService = audioService
@@ -41,6 +52,33 @@ final class TranscriptionCoordinator: ObservableObject {
         self.textInjectionService = textInjectionService
         self.audioMuteService = audioMuteService
         self.liveTranscriptionService = liveTranscriptionService
+        self.speakService = speakService
+        self.textSourceService = textSourceService
+        self.audioExporter = audioExporter
+
+        // Persistent observers on the speak service's progress + range
+        // streams. The streams live for the lifetime of the SpeakService;
+        // each yielded value updates the matching AppState field on the
+        // main actor (this whole class is @MainActor). The observers stay
+        // alive for the app's lifetime — no per-utterance setup/teardown.
+        speakStreamTask = Task { [weak self] in
+            for await progress in speakService.progressStream {
+                guard let self else { return }
+                // Don't overwrite a terminal state (idle / error /
+                // paused). The progress stream keeps yielding 1.0 after
+                // didFinish; we treat those as no-ops.
+                if case .speaking = self.appState?.speakState {
+                    self.appState?.speakState = .speaking(progress: progress)
+                } else if case .preparing = self.appState?.speakState {
+                    self.appState?.speakState = .speaking(progress: progress)
+                }
+            }
+        }
+        speakRangeStreamTask = Task { [weak self] in
+            for await range in speakService.rangeStream {
+                self?.appState?.readAlongRange = range
+            }
+        }
     }
     
     /// Called when hotkey is pressed - start recording
@@ -85,9 +123,14 @@ final class TranscriptionCoordinator: ObservableObject {
         
         // Start recording
         do {
+            // Clear the prior recording so the popover's "Save audio…"
+            // affordance disappears the moment a new capture begins. The
+            // field gets re-stamped in handleHotkeyReleased on success.
+            appState.lastRecording = nil
+
             appState.transcriptionState = .recording
             appState.errorMessage = nil
-            
+
             // Mute system audio if enabled (so mic doesn't pick up speaker audio)
             if appState.muteAudioWhileRecording, let audioMuteService = audioMuteService {
                 do {
@@ -131,7 +174,15 @@ final class TranscriptionCoordinator: ObservableObject {
         
         // Stop recording
         let audioData = await audioService.stopRecording()
-        
+
+        // Keep the just-captured audio in memory so the popover's
+        // "Save audio…" affordance can hand it to AudioExporter on
+        // demand. Cleared on next recording start (see
+        // handleHotkeyPressed) or app quit.
+        if !audioData.isTooShort {
+            appState.lastRecording = audioData
+        }
+
         // Restore system audio if we muted it
         if appState.muteAudioWhileRecording, let audioMuteService = audioMuteService {
             do {
@@ -525,17 +576,201 @@ final class TranscriptionCoordinator: ObservableObject {
     func cancel() async {
         guard let appState = appState,
               let audioService = audioService else { return }
-        
+
         if appState.transcriptionState == .recording {
             _ = await audioService.stopRecording()
-            
+
             // Restore system audio if we muted it
             if appState.muteAudioWhileRecording, let audioMuteService = audioMuteService {
                 try? await audioMuteService.restoreSystemAudio()
             }
         }
-        
+
         recordingTask?.cancel()
         appState.transcriptionState = .idle
     }
+
+    // MARK: - v1.2.0 Speak Lane
+
+    /// Single entry point for the Speak hotkey. Resolves the focused
+    /// app's selection (or clipboard as fallback), and starts TTS.
+    /// No-op when there's nothing to read.
+    func handleSpeakHotkey() async {
+        guard let textSourceService else { return }
+        let text = await textSourceService.resolveSelectionOrClipboard()
+        guard let text, !text.isEmpty else {
+            appState?.errorMessage = "No text selected or in clipboard"
+            return
+        }
+        await startSpeak(source: .typed(text))
+    }
+
+    /// Resolve `source` to text via `TextSourceService` and start
+    /// playback. Updates `speakState`, populates `readAlongText` for
+    /// the large window, and opens the window if the user opted in.
+    func startSpeak(source: SpeakSource) async {
+        guard let appState,
+              let speakService,
+              let textSourceService else { return }
+
+        // Resolve the source.
+        let resolved: String?
+        do {
+            resolved = try await textSourceService.resolve(source)
+        } catch {
+            appState.speakState = .error(error.localizedDescription)
+            appState.errorMessage = error.localizedDescription
+            return
+        }
+        guard let text = resolved, !text.isEmpty else {
+            appState.errorMessage = "Nothing to speak from this source"
+            return
+        }
+
+        // Populate read-along + open the modal if the user wants it.
+        appState.readAlongText = text
+        appState.readAlongRange = nil
+        appState.speakState = .preparing
+        appState.errorMessage = nil
+
+        if appState.showReadAlongWindow {
+            // The AppDelegate-owned large window observes
+            // `isLiveActive`; for the read-along path we surface the
+            // window via the same notification the live path uses. The
+            // window's mode is decided by `speakState.isActive`.
+            NotificationCenter.default.post(name: .openTalkingLargeWindow, object: nil)
+        }
+
+        // Run playback. SpeakService.speak() returns when the synth
+        // reports didFinish or didCancel for the in-flight utterance.
+        do {
+            try await speakService.speak(
+                text: text,
+                voiceID: appState.ttsVoiceID.isEmpty ? nil : appState.ttsVoiceID,
+                rate: ttsAVRate(from: appState.ttsRate),
+                pitch: Float(appState.ttsPitch)
+            )
+            appState.speakState = .idle
+            appState.readAlongRange = nil
+        } catch {
+            appState.speakState = .error(error.localizedDescription)
+            appState.errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Pause an in-flight utterance at the next word boundary.
+    func pauseSpeak() async {
+        guard let speakService, let appState else { return }
+        await speakService.pause()
+        // The synth's pause/resume don't fire didStart/didFinish, so
+        // we move the high-level state ourselves. The current progress
+        // value lives in `speakState`'s associated value already.
+        if case .speaking(let progress) = appState.speakState {
+            appState.speakState = .paused
+            // Preserve progress by leaving the field as-is conceptually;
+            // .paused is the new top-level case but the popover/large
+            // window read progress from elsewhere when needed.
+            _ = progress
+        }
+    }
+
+    /// Resume a paused utterance.
+    func resumeSpeak() async {
+        guard let speakService, let appState else { return }
+        await speakService.resume()
+        if appState.speakState == .paused {
+            appState.speakState = .speaking(progress: 0)
+        }
+    }
+
+    /// Stop an in-flight or paused utterance. Returns once the synth
+    /// has reported didCancel and the read-along state is cleared.
+    func stopSpeak() async {
+        guard let speakService, let appState else { return }
+        await speakService.stop()
+        appState.speakState = .idle
+        appState.readAlongRange = nil
+        appState.readAlongText = ""
+    }
+
+    // MARK: - v1.2.0 Audio Export
+
+    /// Synthesize `source` (without playing) and write the audio to
+    /// `url` in `format`. Used by *Save Speech As…* — the user sees a
+    /// save panel, picks a file, and the rendered audio lands there
+    /// without interrupting any in-progress playback (SpeakService
+    /// uses a separate synthesizer instance for offline render).
+    func exportSpeakAudio(source: SpeakSource, to url: URL, format: AudioExportFormat) async throws {
+        guard let appState,
+              let speakService,
+              let textSourceService,
+              let audioExporter else {
+            throw CoordinatorError.servicesNotConfigured
+        }
+
+        guard let text = try await textSourceService.resolve(source), !text.isEmpty else {
+            throw CoordinatorError.emptyTextSource
+        }
+
+        let audio = try await speakService.renderToAudioData(
+            text: text,
+            voiceID: appState.ttsVoiceID.isEmpty ? nil : appState.ttsVoiceID,
+            rate: ttsAVRate(from: appState.ttsRate),
+            pitch: Float(appState.ttsPitch)
+        )
+        try await audioExporter.exportToFile(audio: audio, to: url, format: format)
+    }
+
+    /// Write the most recent captured recording to `url` in `format`.
+    /// `appState.lastRecording` is stamped by the hotkey path and
+    /// cleared on the next recording start; the menu item that triggers
+    /// this should be disabled while it's nil.
+    func exportLastRecording(to url: URL, format: AudioExportFormat) async throws {
+        guard let appState, let audioExporter else {
+            throw CoordinatorError.servicesNotConfigured
+        }
+        guard let audio = appState.lastRecording else {
+            throw CoordinatorError.noRecordingAvailable
+        }
+        try await audioExporter.exportToFile(audio: audio, to: url, format: format)
+    }
+
+    // MARK: - Helpers
+
+    /// Map the AppState 0...1 rate slider into AVSpeechUtterance's
+    /// min...max range. 0.5 ≈ AVSpeechUtteranceDefaultSpeechRate.
+    private func ttsAVRate(from normalized: Double) -> Float {
+        let clamped = max(0.0, min(1.0, normalized))
+        let min = AVSpeechUtteranceMinimumSpeechRate
+        let max = AVSpeechUtteranceMaximumSpeechRate
+        return min + (max - min) * Float(clamped)
+    }
+}
+
+// MARK: - Errors
+
+enum CoordinatorError: LocalizedError {
+    case servicesNotConfigured
+    case emptyTextSource
+    case noRecordingAvailable
+
+    var errorDescription: String? {
+        switch self {
+        case .servicesNotConfigured:
+            return "Coordinator services have not been wired up yet"
+        case .emptyTextSource:
+            return "Nothing to speak from the selected source"
+        case .noRecordingAvailable:
+            return "No recording in memory — record something first, then try Save Audio again"
+        }
+    }
+}
+
+// MARK: - Notifications
+
+extension Notification.Name {
+    /// Asks the AppDelegate to surface the large modal window. Used by
+    /// the speak lane to flip the window into read-along mode when an
+    /// utterance starts (and `showReadAlongWindow` is on).
+    static let openTalkingLargeWindow = Notification.Name("OpenTalkingLargeWindow")
 }
