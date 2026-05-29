@@ -50,7 +50,7 @@ The first time you select a model, it will be downloaded from HuggingFace (~30s 
 
 ## Why WhisperKit? (vs whisper.cpp)
 
-LocalWhisper uses **WhisperKit** instead of other Whisper implementations like **whisper.cpp**:
+Sage.is Talking uses **WhisperKit** instead of other Whisper implementations like **whisper.cpp**:
 
 | Aspect | WhisperKit | whisper.cpp |
 |--------|------------|-------------|

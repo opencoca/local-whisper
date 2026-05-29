@@ -57,13 +57,18 @@ final class TranscriptionCoordinator: ObservableObject {
         self.audioExporter = audioExporter
 
         // Persistent observers on the speak service's progress + range
-        // streams. The streams live for the lifetime of the SpeakService;
-        // each yielded value updates the matching AppState field on the
-        // main actor (this whole class is @MainActor). The observers stay
-        // alive for the app's lifetime — no per-utterance setup/teardown.
+        // streams. The streams live for the lifetime of the SpeakService
+        // and carry an utteranceID with each yield; we drop any yield
+        // whose id is older than the most-recently-seen one so a
+        // preempted utterance's late delegate callbacks can't apply to
+        // a freshly-started utterance (would highlight the wrong word,
+        // or flip speakState back to .idle while audio plays on).
         speakStreamTask = Task { [weak self] in
-            for await progress in speakService.progressStream {
+            var lastSeenID: UInt64 = 0
+            for await (id, progress) in speakService.progressStream {
                 guard let self else { return }
+                if id < lastSeenID { continue }
+                lastSeenID = id
                 // Don't overwrite a terminal state (idle / error /
                 // paused). The progress stream keeps yielding 1.0 after
                 // didFinish; we treat those as no-ops.
@@ -75,7 +80,10 @@ final class TranscriptionCoordinator: ObservableObject {
             }
         }
         speakRangeStreamTask = Task { [weak self] in
-            for await range in speakService.rangeStream {
+            var lastSeenID: UInt64 = 0
+            for await (id, range) in speakService.rangeStream {
+                if id < lastSeenID { continue }
+                lastSeenID = id
                 self?.appState?.readAlongRange = range
             }
         }

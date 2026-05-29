@@ -18,18 +18,24 @@ actor SpeakService {
     private var delegate: Delegate?
     private var activeContinuation: CheckedContinuation<Void, Error>?
 
-    private let progressContinuation: AsyncStream<Double>.Continuation
-    nonisolated let progressStream: AsyncStream<Double>
+    /// Monotonically-increasing utterance id. The delegate closes over
+    /// the id it was installed with and tags every stream yield, so the
+    /// coordinator can drop yields from a preempted utterance whose
+    /// callbacks arrive after the next one has started.
+    private var nextUtteranceID: UInt64 = 0
 
-    private let rangeContinuation: AsyncStream<NSRange>.Continuation
-    nonisolated let rangeStream: AsyncStream<NSRange>
+    private let progressContinuation: AsyncStream<(UInt64, Double)>.Continuation
+    nonisolated let progressStream: AsyncStream<(UInt64, Double)>
+
+    private let rangeContinuation: AsyncStream<(UInt64, NSRange)>.Continuation
+    nonisolated let rangeStream: AsyncStream<(UInt64, NSRange)>
 
     init() {
-        var pc: AsyncStream<Double>.Continuation!
+        var pc: AsyncStream<(UInt64, Double)>.Continuation!
         self.progressStream = AsyncStream { pc = $0 }
         self.progressContinuation = pc
 
-        var rc: AsyncStream<NSRange>.Continuation!
+        var rc: AsyncStream<(UInt64, NSRange)>.Continuation!
         self.rangeStream = AsyncStream { rc = $0 }
         self.rangeContinuation = rc
     }
@@ -63,9 +69,11 @@ actor SpeakService {
             prior?.resume(returning: ())
         }
 
+        nextUtteranceID &+= 1
+        let myID = nextUtteranceID
         let utterance = makeUtterance(text: text, voiceID: voiceID, rate: rate, pitch: pitch)
         let synth = synthesizer ?? AVSpeechSynthesizer()
-        let del = installDelegate(on: synth, utteranceLength: text.utf16.count)
+        let del = installDelegate(on: synth, utteranceLength: text.utf16.count, utteranceID: myID)
         delegate = del
         synthesizer = synth
 
@@ -159,8 +167,9 @@ actor SpeakService {
         return utterance
     }
 
-    private func installDelegate(on synth: AVSpeechSynthesizer, utteranceLength: Int) -> Delegate {
+    private func installDelegate(on synth: AVSpeechSynthesizer, utteranceLength: Int, utteranceID: UInt64) -> Delegate {
         let del = Delegate(
+            utteranceID: utteranceID,
             progressContinuation: progressContinuation,
             rangeContinuation: rangeContinuation,
             utteranceLength: utteranceLength,
@@ -184,17 +193,20 @@ actor SpeakService {
     /// own serial delivery queue) and resolves the active continuation
     /// via the `onComplete` closure when an utterance ends/cancels.
     private final class Delegate: NSObject, AVSpeechSynthesizerDelegate {
-        let progressContinuation: AsyncStream<Double>.Continuation
-        let rangeContinuation: AsyncStream<NSRange>.Continuation
+        let utteranceID: UInt64
+        let progressContinuation: AsyncStream<(UInt64, Double)>.Continuation
+        let rangeContinuation: AsyncStream<(UInt64, NSRange)>.Continuation
         let utteranceLength: Int
         let onComplete: () -> Void
 
         init(
-            progressContinuation: AsyncStream<Double>.Continuation,
-            rangeContinuation: AsyncStream<NSRange>.Continuation,
+            utteranceID: UInt64,
+            progressContinuation: AsyncStream<(UInt64, Double)>.Continuation,
+            rangeContinuation: AsyncStream<(UInt64, NSRange)>.Continuation,
             utteranceLength: Int,
             onComplete: @escaping () -> Void
         ) {
+            self.utteranceID = utteranceID
             self.progressContinuation = progressContinuation
             self.rangeContinuation = rangeContinuation
             self.utteranceLength = utteranceLength
@@ -202,7 +214,7 @@ actor SpeakService {
         }
 
         func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
-            progressContinuation.yield(0.0)
+            progressContinuation.yield((utteranceID, 0.0))
         }
 
         func speechSynthesizer(
@@ -210,15 +222,15 @@ actor SpeakService {
             willSpeakRangeOfSpeechString characterRange: NSRange,
             utterance: AVSpeechUtterance
         ) {
-            rangeContinuation.yield(characterRange)
+            rangeContinuation.yield((utteranceID, characterRange))
             guard utteranceLength > 0 else { return }
             let position = Double(characterRange.location + characterRange.length)
             let progress = min(max(position / Double(utteranceLength), 0.0), 1.0)
-            progressContinuation.yield(progress)
+            progressContinuation.yield((utteranceID, progress))
         }
 
         func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-            progressContinuation.yield(1.0)
+            progressContinuation.yield((utteranceID, 1.0))
             onComplete()
         }
 

@@ -1,6 +1,6 @@
-# LocalWhisper — Roadmap
+# Sage.is Talking — Roadmap
 
-This file tracks active work for the LocalWhisper menu bar app.
+This file tracks active work for the Sage.is Talking menu bar app.
 
 > **Convention** — Sections below map to kanban columns. Inline source-code
 > tags use the same vocabulary so items stay cross-referenced between this
@@ -65,24 +65,24 @@ This file tracks active work for the LocalWhisper menu bar app.
   - **Out of scope** (tracked for v2 / v3): Kokoro CoreML engine; Chatterbox detect-and-use via brew (`chatterbox-cli` formula in `Sage-is/homebrew-apps`, FastAPI daemon + warm process); Readability article extraction; SRT/VTT export of file transcripts; SSML markup; speaker diarization; Personal Voice creation flow
   - **Release mechanics**: `feature/sage-is-talking-v1` off `develop` (git-flow; never to master). Commit 1 = rebrand only (still compiles). Commits 2–N = functional additions, one per discrete unit. Bump `release.sh` to v1.2.0. PR into `develop`. `release_finish` per the existing flow.
 
-- [ ] **LocalWhisper for iPhone — minimal standalone iOS app** #ios #cross-platform
+- [ ] **Sage.is Talking for iPhone — minimal standalone iOS app** #ios #cross-platform
   - Mobile research concluded iOS standalone is the highest-leverage cross-platform move: WhisperKit is iOS-native, ~60-65% of macOS Swift LOC ports with cosmetic changes, product shape is "open → dictate → live transcript → copy → swap apps → paste." Differentiation = AGPL + 100% offline + same-app-as-desktop. iOS implementation detail captured inline below (the prior plan-file pointer is stale — the plan file at `~/.claude/plans/we-need-to-get-smooth-anchor.md` now holds the macOS 1.2.0 rebrand + TTS scope above).
-  - **Architecture**: same repo; new `LocalWhisperMobile.xcodeproj` alongside `Package.swift`; new `LocalWhisper/Mobile/` folder for iOS-only code; `#if os(macOS)` guards in the 2-3 shared files with macOS-isms; macOS Package.swift target excludes `Mobile/`.
+  - **Architecture**: same repo; new `TalkingMobile.xcodeproj` alongside `Package.swift`; new `Talking/Mobile/` folder for iOS-only code; `#if os(macOS)` guards in the 2-3 shared files with macOS-isms; macOS Package.swift target excludes `Mobile/`.
   - **Step 1**: Guard shared files cross-platform
-    - [ ] `TranscriptionService.swift:175-189` — wrap `~/Library/Logs/LocalWhisper.log` in `#if os(macOS)` / use `URL.cachesDirectory` on iOS
+    - [ ] `TranscriptionService.swift:175-189` — wrap `~/Library/Logs/Talking.log` in `#if os(macOS)` / use `URL.cachesDirectory` on iOS
     - [ ] `LargeLiveTranscriptionView.swift:44` — guard `Color(nsColor: .windowBackgroundColor)` / use `Color(uiColor: .systemBackground)` on iOS
     - [ ] `AudioCaptureService.swift` — add `#if os(iOS)` branch for `AVAudioSession.setCategory(.record, mode: .measurement)` + `setActive(true)` before `engine.start()`
     - [ ] `make app` clean — macOS build regression check
-  - **Step 2**: Bundle `openai_whisper-tiny.en` (~75 MB, four `.mlmodelc` files) into `LocalWhisper/Mobile/Resources/Models/` from `argmaxinc/whisperkit-coreml` HuggingFace repo
-  - **Step 3**: Create iOS-only files in `LocalWhisper/Mobile/`
-    - [ ] `LocalWhisperMobileApp.swift` — `@main` App + WindowGroup + MobileAppState
+  - **Step 2**: Bundle `openai_whisper-tiny.en` (~75 MB, four `.mlmodelc` files) into `Talking/Mobile/Resources/Models/` from `argmaxinc/whisperkit-coreml` HuggingFace repo
+  - **Step 3**: Create iOS-only files in `Talking/Mobile/`
+    - [ ] `TalkingMobileApp.swift` — `@main` App + WindowGroup + MobileAppState
     - [ ] `ContentView.swift` — Tap-to-Record button + LargeLiveTranscriptionView + Copy/Clear buttons + toast
     - [ ] `MobileAppState.swift` — stripped AppState (model/live/vocabulary/font; drop hotkey + OutputMethod + proxy + mute + accessibility)
     - [ ] `MobileCoordinator.swift` — stripped TranscriptionCoordinator (live path only; no TextInjection, no NSRunningApplication)
     - [ ] `MobilePermissionsService.swift` — `AVAudioApplication.requestRecordPermission` only
     - [ ] `SettingsView.swift` — Model section (bundled + downloadable: base / small / large-v3-turbo via `WhisperKit.download`) + Live transcription (font slider, contrast) + About
     - [ ] `Info.plist` — `NSMicrophoneUsageDescription`, supported orientations, no background audio mode
-  - **Step 4**: `LocalWhisperMobile.xcodeproj` at repo root — reference (not copy) shared files in `LocalWhisper/{Services,Models,UI}/` + include `LocalWhisper/Mobile/*.swift`; iOS 16.4 deployment target; WhisperKit via local SPM
+  - **Step 4**: `TalkingMobile.xcodeproj` at repo root — reference (not copy) shared files in `Talking/{Services,Models,UI}/` + include `Talking/Mobile/*.swift`; iOS 16.4 deployment target; WhisperKit via local SPM
   - **Step 5**: `Package.swift` — add `exclude: ["LocalWhisper.entitlements", "Mobile"]`
   - **Step 6**: Rebrand + ship
     - [ ] Lock final name: "Sage.is Talk", "Sage.is Talking", or other Sage.is variant
@@ -130,7 +130,7 @@ This file tracks active work for the LocalWhisper menu bar app.
   - [x] `scripts/ensure-dev-signing-identity.sh` (NEW) — creates a persistent self-signed `LocalWhisper Dev` cert in login keychain via openssl + `security import`. Idempotent. Per-machine; not in git.
   - [x] `Makefile` — `setup` target invokes the script after the brew/gh/asset checks
   - [x] `scripts/release.sh` — replaced `--sign -` with `--sign "LocalWhisper Dev" --options runtime --identifier com.localwhisper.app`; fails loudly with "Run: make setup" if the identity is missing
-  - [x] `HotkeyManager` — file-log helper (mirrors `AppDelegate.log()`) wired into `start()` and `stop()` outcomes. Was `print`-only; now visible in `~/Library/Logs/LocalWhisper.log`. The FAILED-tap line names the canonical fix.
+  - [x] `HotkeyManager` — file-log helper (mirrors `AppDelegate.log()`) wired into `start()` and `stop()` outcomes. Was `print`-only; now visible in `~/Library/Logs/Talking.log`. The FAILED-tap line names the canonical fix.
   - [x] `CLAUDE.md` — new "Dev Signing" section documents the cert + one-time tccutil reset
   - [ ] Manual: `make setup` creates the cert; re-running is a no-op
   - [ ] Manual: `make clean && make app` produces `dist/LocalWhisper.app`; `codesign -dv` shows `Authority=LocalWhisper Dev`
@@ -174,7 +174,7 @@ heading by area (Services, UI, Coordinators, etc.).*
 
 ## Backlog
 
-- [ ] **Cut LocalWhisper 1.0.0** #release
+- [ ] **Cut Sage.is Talking 1.2.0** #release
   - [ ] `make setup` on the maintainer's box (one-time install of `gh` + `create-dmg`)
   - [ ] Fork repo to `Startr-Cloud/local-whisper`; update `origin` remote
   - [ ] `make first_release` (creates `release/1.0.0` branch since there's no prior tag)

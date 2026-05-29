@@ -192,10 +192,16 @@ final class AppState: ObservableObject {
     /// (the file is split into ~30 s windows; progress ticks after each).
     @Published var fileTranscriptionProgress: Double = 0
 
-    /// The most recent capture (hotkey or live) so the user can save it
+    /// The most recent **hotkey-mode** capture, so the user can save it
     /// via *Save Last Recording…*. Cleared at the start of the next
     /// recording and on app quit — so the "save audio" affordance only
     /// shows when there's something concrete to save.
+    ///
+    /// Live mode is not represented here today: WhisperKit's
+    /// `AudioStreamTranscriber` owns the live capture buffer and
+    /// doesn't expose the PCM. Surfacing live audio would mean
+    /// teeing the capture node via a parallel tap on
+    /// `AudioCaptureService`; tracked as a v1.x follow-up.
     @Published var lastRecording: AudioData? = nil
 
     // Persisted settings:

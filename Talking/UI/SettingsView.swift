@@ -1412,9 +1412,14 @@ struct VoiceSettingsView: View {
                             Button {
                                 playSample()
                             } label: {
-                                Label(samplePlaying ? "Playing sample…" : "Play sample", systemImage: "play.fill")
+                                Label(samplePlayLabel, systemImage: "play.fill")
                             }
-                            .disabled(samplePlaying)
+                            // Gate on global speakState so a sample
+                            // can't collide with hotkey- or popover-
+                            // initiated playback (which would preempt
+                            // each other via SpeakService's stop /
+                            // restart path).
+                            .disabled(samplePlaying || appState.speakState.isActive)
                         }
                     }
 
@@ -1559,6 +1564,15 @@ struct VoiceSettingsView: View {
         case .clipboard: return "Clipboard"
         case .typedInput: return "Typed input"
         }
+    }
+
+    /// Label for the Play sample button, reflecting both the local
+    /// `samplePlaying` (a sample WE just kicked off) and the global
+    /// `speakState` (any other in-flight playback).
+    private var samplePlayLabel: String {
+        if samplePlaying { return "Playing sample…" }
+        if appState.speakState.isActive { return "Speech in progress…" }
+        return "Play sample"
     }
 
     // MARK: - Sample playback

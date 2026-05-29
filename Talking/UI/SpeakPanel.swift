@@ -86,6 +86,8 @@ struct SpeakPanel: View {
             TextField("https://…", text: $urlString)
                 .textFieldStyle(.roundedBorder)
                 .font(.body)
+                .textContentType(.URL)
+                .onSubmit { if canSpeak { speak() } }
         }
     }
 
@@ -115,6 +117,9 @@ struct SpeakPanel: View {
                 }
                 .keyboardShortcut(.escape, modifiers: [])
             } else {
+                // No global `.keyboardShortcut(.return)` here: the
+                // URL TextField uses `.onSubmit` for Return, and the
+                // typed TextEditor needs Return for newlines.
                 Button {
                     speak()
                 } label: {
@@ -122,7 +127,6 @@ struct SpeakPanel: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!canSpeak)
-                .keyboardShortcut(.return, modifiers: [])
 
                 Button {
                     saveAudio()
@@ -145,7 +149,11 @@ struct SpeakPanel: View {
         case .file:
             return fileURL != nil
         case .url:
-            return URL(string: urlString)?.scheme != nil
+            // Allowlist meaningful schemes so things like `foo:` or
+            // `javascript:...` don't enable the Speak button.
+            guard let url = URL(string: urlString),
+                  let scheme = url.scheme?.lowercased() else { return false }
+            return ["http", "https", "file"].contains(scheme)
         }
     }
 
