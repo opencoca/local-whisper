@@ -402,9 +402,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func setupGlobalShortcut() {
-        // Load saved hotkeys (hold + live)
+        // Load saved hotkeys (hold + live + speak)
         hotkeyManager.loadSavedHotkey()
         hotkeyManager.loadSavedLiveHotkey()
+        hotkeyManager.loadSavedSpeakHotkey()
 
         hotkeyManager.onKeyDown = {
             Task { @MainActor in
@@ -424,6 +425,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyManager.onLiveKeyDown = {
             Task { @MainActor in
                 await AppState.shared.coordinator.handleLiveHotkey()
+            }
+        }
+
+        // Speak hotkey (v1.2.0+) — single press resolves selection or
+        // clipboard and starts AVSpeechSynthesizer playback. Same
+        // toggle shape as the live hotkey: only onKeyDown wired.
+        hotkeyManager.onSpeakKeyDown = {
+            Task { @MainActor in
+                await AppState.shared.coordinator.handleSpeakHotkey()
             }
         }
 
