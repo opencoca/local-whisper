@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+## [1.2.0] — 2026-05-30
+
+### Added
+
 - **Rebrand to Sage.is Talking.** Source directory `LocalWhisper/` → `Talking/`; package + executable + `@main` struct renamed; bundle id `com.localwhisper.app` → `is.sage.talking`; log paths `~/Library/Logs/LocalWhisper.log` → `Talking.log`, `/tmp/localwispr_*` → `/tmp/talking_*`; dev signing identity `LocalWhisper Dev` → `Talking Dev`; About header reads *Sage.is Talking*; menu bar header reads *Talking*.
 - **Two-way voice — Speak text aloud.** Dedicated Speak hotkey (default `Ctrl+Option+Shift+Space`) reads selection-first, clipboard-fallback. Popover gains a text field, voice picker, rate + pitch sliders, and source buttons (Selection / Clipboard / File / URL). Pause / Resume / Stop top-level.
 - **Three TTS engines.** `AVSpeechSynthesizer` (Default / Enhanced / Premium / Personal Voice tiers), `NSSpeechSynthesizer` (the `say` catalog), and `/usr/bin/say` as a subprocess backend that unlocks Siri voices the in-process synth refuses to load.
@@ -95,7 +105,8 @@ Initial publicly tagged release.
 - `isModelLoaded` state correctly reflects model-load completion.
 - CI app-launch step that hung the macOS runner.
 
-[Unreleased]: https://github.com/opencoca/local-whisper/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/opencoca/local-whisper/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/opencoca/local-whisper/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/opencoca/local-whisper/compare/v1.0.4...v1.1.0
 [1.0.4]: https://github.com/opencoca/local-whisper/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/opencoca/local-whisper/compare/v1.0.2...v1.0.3
