@@ -1648,17 +1648,28 @@ struct VoiceSettingsView: View {
                     .foregroundStyle(.tertiary)
             }
 
-            // Speed factor: 0.80×–1.30× in 0.01 increments.
+            // Speed factor: 0.50×–1.60× in 0.01 increments. Lower end
+            // covers novelty voices (Bells, Bubbles, Cellos) that
+            // largely ignore -r and produce a near-fixed ~40–80 wpm
+            // cadence; upper end covers fast Siri / Premium voices
+            // plus short-word-count drift in English. Empirical
+            // measurements via `say -o file.aiff` + afinfo landed
+            // Aaron Enhanced at 1.03–1.14× and Samantha at 1.11–1.27×
+            // (rate-dependent), so 1.60 leaves headroom for hotter
+            // Premium voices without inviting users to mask real
+            // bugs with absurdly high values. Going beyond 1.60×
+            // suggests something else is wrong — investigate the
+            // elapsed-time math, not the slider.
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text("Speed correction")
                         .frame(width: 140, alignment: .leading)
-                    Slider(value: $appState.ttsSaySpeedFactor, in: 0.80...1.30, step: 0.01)
+                    Slider(value: $appState.ttsSaySpeedFactor, in: 0.50...1.60, step: 0.01)
                     Text(String(format: "%.2f×", appState.ttsSaySpeedFactor))
                         .font(.system(.caption, design: .monospaced))
                         .frame(width: 60, alignment: .trailing)
                 }
-                Text("Higher = highlight moves faster (use when audio is ahead of the highlight). Lower = highlight moves slower (use when the highlight is zipping past the voice).")
+                Text("Higher = highlight moves faster (use when audio is ahead of the highlight). Lower = highlight moves slower (use when the highlight is zipping past the voice). (Range: 0.50× – 1.60×.)")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
