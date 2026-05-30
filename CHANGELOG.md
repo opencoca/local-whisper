@@ -10,13 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Rebrand to Sage.is Talking.** Source directory `LocalWhisper/` → `Talking/`; package + executable + `@main` struct renamed; bundle id `com.localwhisper.app` → `is.sage.talking`; log paths `~/Library/Logs/LocalWhisper.log` → `Talking.log`, `/tmp/localwispr_*` → `/tmp/talking_*`; dev signing identity `LocalWhisper Dev` → `Talking Dev`; About header reads *Sage.is Talking*; menu bar header reads *Talking*.
-- *(more in v1.2.0 — TTS lane, file-transcribe modal, audio export both directions, read-along highlight)*
+- **Two-way voice — Speak text aloud.** Dedicated Speak hotkey (default `Ctrl+Option+Shift+Space`) reads selection-first, clipboard-fallback. Popover gains a text field, voice picker, rate + pitch sliders, and source buttons (Selection / Clipboard / File / URL). Pause / Resume / Stop top-level.
+- **Three TTS engines.** `AVSpeechSynthesizer` (Default / Enhanced / Premium / Personal Voice tiers), `NSSpeechSynthesizer` (the `say` catalog), and `/usr/bin/say` as a subprocess backend that unlocks Siri voices the in-process synth refuses to load.
+- **File transcription.** Drag any audio/video file onto the app icon, drop on the popover, or use *Open File…* to transcribe in ~30 s chunks. Transcript streams into the large window with progress.
+- **Audio export — both directions.** *Save Speech As…* writes the configured TTS utterance to `.wav` or `.m4a` without playing. *Save Last Recording…* writes the most recent dictation capture (16 kHz mono Float32 in memory) to disk through the same `AudioExporter`.
+- **Read-along modal.** During TTS the large window shows the source text with the active word highlighted and the active sentence centered. Real per-word delegate callbacks for AV / NS; a time-driven simulator for the `say` subprocess.
+- **User-tunable `say` calibration.** When the `say` subprocess backend is on, Voice settings expose *Audio start delay* (0–2.00 s, default 0.18 s) and *Speed correction* (0.50×–2.50×, default 1.15×) sliders that shape the read-along highlight timing. Sliders are inert for AV / NS — those engines drive the highlight from Apple's own per-word callbacks.
+- **Configurable Speak hotkey** in Settings → Shortcuts, using the same recorder + conflict detection as the record + live hotkeys.
 
 ### Changed
 
 - Users upgrading from a `com.localwhisper.app` install will be prompted by macOS to re-grant Accessibility + Microphone once under the new `is.sage.talking` identity. First-launch banner explains the change.
+- Large transcription window is now mode-aware: *live transcription* / *file transcription* / *read-along TTS*. Footer controls adapt per mode (Clear+Stop+Copy / Stop+Copy / Pause+Resume+Stop+Save Audio).
 
 ### Fixed
+
+- Read-along centering: previously anchored to the bottom of the modal. Now splits source text into sentences with stable IDs and centers the active sentence as it advances.
 
 ### Removed
 
