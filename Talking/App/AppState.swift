@@ -265,6 +265,23 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(ttsUseSayCommand, forKey: "ttsUseSayCommand") }
     }
 
+    /// Seconds the say highlight simulator pins to word 0 before
+    /// starting to advance — compensates for the process+audio-engine
+    /// cold-start between `proc.run()` and the first audible sample.
+    /// Range 0…0.5; default 0.18.
+    @Published var ttsSayColdStartLag: Double {
+        didSet { UserDefaults.standard.set(ttsSayColdStartLag, forKey: "ttsSayColdStartLag") }
+    }
+
+    /// Multiplier on the requested wpm when the simulator estimates
+    /// the actual speech rate. >1 = audio is brisker than `-r` says,
+    /// <1 = audio is slower. Range 0.80…1.30; default 1.15. The voice
+    /// makes a big difference here — Premium / Siri voices tend to
+    /// land around 1.10–1.20, Eloquence novelty voices closer to 1.0.
+    @Published var ttsSaySpeedFactor: Double {
+        didSet { UserDefaults.standard.set(ttsSaySpeedFactor, forKey: "ttsSaySpeedFactor") }
+    }
+
     // MARK: - Proxy Settings
     @Published var proxyEnabled: Bool {
         didSet { 
@@ -447,6 +464,8 @@ final class AppState: ObservableObject {
         }
         self.showReadAlongWindow = UserDefaults.standard.object(forKey: "showReadAlongWindow") as? Bool ?? true
         self.ttsUseSayCommand = UserDefaults.standard.object(forKey: "ttsUseSayCommand") as? Bool ?? false
+        self.ttsSayColdStartLag = UserDefaults.standard.object(forKey: "ttsSayColdStartLag") as? Double ?? 0.18
+        self.ttsSaySpeedFactor = UserDefaults.standard.object(forKey: "ttsSaySpeedFactor") as? Double ?? 1.15
 
         // Load proxy settings
         self.proxyEnabled = UserDefaults.standard.bool(forKey: "proxyEnabled")

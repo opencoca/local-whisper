@@ -1478,6 +1478,8 @@ struct VoiceSettingsView: View {
                             }
                             .padding(10)
                             .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+
+                            sayCalibrationPanel
                         }
                     }
 
@@ -1553,6 +1555,71 @@ struct VoiceSettingsView: View {
                 personalVoiceRow
             }
         }
+    }
+
+    /// Power-user calibration sliders for the say-subprocess
+    /// highlight simulator. Shown only when the say toggle is on
+    /// (the caller gates this in the body). Two knobs:
+    ///
+    /// - **Audio start delay** — how long the highlight pins to
+    ///   word 0 before advancing. Compensates for the cold-start
+    ///   between `proc.run()` and the first audible sample.
+    /// - **Speed correction** — multiplier on the requested wpm.
+    ///   `say`'s `-r` is a target, not a guarantee; >1 means audio
+    ///   is brisker than the spec, <1 means slower.
+    ///
+    /// Defaults match SpeakService's defaults (0.18 s, 1.15×).
+    @ViewBuilder
+    private var sayCalibrationPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Calibration", systemImage: "slider.horizontal.3")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                Spacer()
+                Button("Reset to defaults") {
+                    appState.ttsSayColdStartLag = 0.18
+                    appState.ttsSaySpeedFactor = 1.15
+                }
+                .controlSize(.small)
+                .disabled(
+                    abs(appState.ttsSayColdStartLag - 0.18) < 0.005 &&
+                    abs(appState.ttsSaySpeedFactor - 1.15) < 0.005
+                )
+            }
+
+            // Cold-start delay: 0–500 ms in 10 ms increments.
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text("Audio start delay")
+                        .frame(width: 140, alignment: .leading)
+                    Slider(value: $appState.ttsSayColdStartLag, in: 0...0.5, step: 0.01)
+                    Text("\(Int(appState.ttsSayColdStartLag * 1000)) ms")
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(width: 60, alignment: .trailing)
+                }
+                Text("Bump higher if the highlight starts moving before you hear audio. Lower if audio is already speaking by the time word 0 lights up.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            // Speed factor: 0.80×–1.30× in 0.01 increments.
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text("Speed correction")
+                        .frame(width: 140, alignment: .leading)
+                    Slider(value: $appState.ttsSaySpeedFactor, in: 0.80...1.30, step: 0.01)
+                    Text(String(format: "%.2f×", appState.ttsSaySpeedFactor))
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(width: 60, alignment: .trailing)
+                }
+                Text("Higher = highlight moves faster (use when audio is ahead of the highlight). Lower = highlight moves slower (use when the highlight is zipping past the voice).")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
     }
 
     /// The empty-state actionable hint when only Default voices are

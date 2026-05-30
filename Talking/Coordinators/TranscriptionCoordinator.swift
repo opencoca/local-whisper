@@ -663,7 +663,9 @@ final class TranscriptionCoordinator: ObservableObject {
                 voiceID: appState.ttsVoiceID.isEmpty ? nil : appState.ttsVoiceID,
                 rate: ttsAVRate(from: appState.ttsRate),
                 pitch: Float(appState.ttsPitch),
-                useSayCommand: appState.ttsUseSayCommand
+                useSayCommand: appState.ttsUseSayCommand,
+                sayColdStartLag: appState.ttsSayColdStartLag,
+                saySpeedFactor: appState.ttsSaySpeedFactor
             )
             appState.speakState = .idle
             appState.readAlongRange = nil

@@ -144,10 +144,30 @@ actor SpeakService {
     /// is spawned as a subprocess regardless of the voice's engine
     /// prefix. Loses read-along highlighting (no per-word callback)
     /// but reaches whatever Apple's daemon exposes to the CLI tool.
-    func speak(text: String, voiceID: String?, rate: Float, pitch: Float, useSayCommand: Bool = false) async throws {
+    ///
+    /// `sayColdStartLag` / `saySpeedFactor` calibrate the
+    /// time-driven highlight simulator that runs alongside the
+    /// `say` subprocess (see `startSayHighlightSimulation`). Both
+    /// are user-tunable in Settings → Voice when the say toggle
+    /// is on; defaults are 0.18 s and 1.15.
+    func speak(
+        text: String,
+        voiceID: String?,
+        rate: Float,
+        pitch: Float,
+        useSayCommand: Bool = false,
+        sayColdStartLag: TimeInterval = 0.18,
+        saySpeedFactor: Double = 1.15
+    ) async throws {
         if useSayCommand {
             let (_, id) = Self.decodeVoiceID(voiceID)
-            try await speakViaSayCommand(text: text, voiceID: id, rate: rate)
+            try await speakViaSayCommand(
+                text: text,
+                voiceID: id,
+                rate: rate,
+                coldStartLag: sayColdStartLag,
+                speedFactor: saySpeedFactor
+            )
             return
         }
         let (engine, id) = Self.decodeVoiceID(voiceID)
@@ -257,7 +277,13 @@ actor SpeakService {
     /// `(0.0)` at start and `(1.0)` on exit. Read-along works in
     /// principle (the modal still opens with the source text) but
     /// the active-word highlight stays absent — caller's choice.
-    private func speakViaSayCommand(text: String, voiceID: String?, rate: Float) async throws {
+    private func speakViaSayCommand(
+        text: String,
+        voiceID: String?,
+        rate: Float,
+        coldStartLag: TimeInterval,
+        speedFactor: Double
+    ) async throws {
         // Preempt across all three backends.
         preemptInFlight()
 
@@ -293,7 +319,13 @@ actor SpeakService {
         sayProcess = proc
         currentEngine = nil  // Sentinel: pause/stop check sayProcess first.
         progressContinuation.yield((myID, 0.0))
-        startSayHighlightSimulation(utteranceID: myID, text: text, wpm: wpm)
+        startSayHighlightSimulation(
+            utteranceID: myID,
+            text: text,
+            wpm: wpm,
+            coldStartLag: coldStartLag,
+            speedFactor: speedFactor
+        )
 
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             activeContinuation = cont
@@ -324,25 +356,6 @@ actor SpeakService {
 
     // MARK: - Say highlight simulator (time-driven, no per-word callback)
 
-    /// `/usr/bin/say` has a cold-start before audio actually reaches
-    /// the speaker (process spawn + stdin pipe drain + audio engine
-    /// boot). We shift `saySpeakingStartedAt` this far into the
-    /// future so the simulator's `elapsed` clamps to 0 — and the
-    /// highlight stays on word 0 — until real audio has started.
-    /// 180 ms is the median observed on a modern Apple Silicon Mac;
-    /// older hardware will land slightly long here, newer slightly
-    /// short, both within a single word at typical rates.
-    private static let sayColdStartLag: TimeInterval = 0.18
-
-    /// `say` honors `-r` as a target but typically delivers a bit
-    /// faster than the requested wpm — Premium / Siri voices in
-    /// particular have a natural briskness that overshoots the
-    /// spec. Inflate our internal wpm so the simulated highlight
-    /// keeps up with the actual speech rate. Empirically tuned;
-    /// the rate slider in Settings remains the user-facing tempo
-    /// knob.
-    private static let saySpeedFactor: Double = 1.15
-
     /// Start a Task that ticks every 80 ms and yields a range/progress
     /// pair to the streams, estimating the current word from elapsed
     /// time × the wpm we passed `say`. Pauses correctly: SIGSTOP
@@ -350,12 +363,25 @@ actor SpeakService {
     /// `sayPauseStartedAt`. Cancellation comes from
     /// `stopSayHighlightSimulation` (terminate / preempt) or when the
     /// process termination handler fires.
-    private func startSayHighlightSimulation(utteranceID: UInt64, text: String, wpm: Int) {
-        // Anchor the elapsed counter `sayColdStartLag` into the
-        // future. The first ~180 ms of ticks see negative elapsed
+    ///
+    /// `coldStartLag` pins the simulator to word 0 for that many
+    /// seconds (compensates for the process-launch / audio-engine
+    /// delay between `proc.run()` and the first audible sample).
+    /// `speedFactor` multiplies the requested wpm so the simulated
+    /// rate matches what `say` actually delivers — Premium / Siri
+    /// voices commonly run 1.10–1.20× the `-r` target.
+    private func startSayHighlightSimulation(
+        utteranceID: UInt64,
+        text: String,
+        wpm: Int,
+        coldStartLag: TimeInterval,
+        speedFactor: Double
+    ) {
+        // Anchor the elapsed counter `coldStartLag` into the future.
+        // The first ~coldStartLag of ticks see negative elapsed
         // (clamped to 0), so the highlight pins to word 0 until
         // audio actually starts.
-        saySpeakingStartedAt = Date().addingTimeInterval(Self.sayColdStartLag)
+        saySpeakingStartedAt = Date().addingTimeInterval(coldStartLag)
         sayPauseStartedAt = nil
         sayTotalPausedDuration = 0
 
@@ -377,7 +403,7 @@ actor SpeakService {
         // Inflate the requested wpm by the empirical speed factor so
         // our simulated rate matches the rate `say` actually delivers
         // (the requested -r is a target, not a guarantee).
-        let calibratedWPM = Double(wpm) * Self.saySpeedFactor
+        let calibratedWPM = Double(wpm) * speedFactor
         // Floor at 0.5 s so a one-word utterance doesn't divide by ~0.
         let expectedDuration = max(0.5, totalWords / calibratedWPM * 60.0)
 
