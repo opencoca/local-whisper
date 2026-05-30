@@ -36,36 +36,62 @@ struct LargeLiveTranscriptionView: View {
         appState.speakState.isActive ? .readAlong : .liveTranscription
     }
 
+    /// Cached sentence ranges + display strings for the read-along
+    /// path. Recomputed whenever `appState.readAlongText` changes.
+    /// Each ID-bearing sentence becomes its own Text in the scroll
+    /// view so the centering anchor can target whichever sentence
+    /// the highlighted word currently lives in.
+    @State private var sentenceCache: [SentenceChunk] = []
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             statusHeader
 
-            // Transcript fills the rest. ScrollView with bottom-anchored
-            // content keeps the latest text visible as it streams in
-            // (live mode) or the highlighted word visible (read-along).
+            // Transcript fills the rest. Live-transcription path keeps
+            // its bottom-anchored single-Text layout (always show the
+            // newest word as audio streams in). Read-along splits into
+            // per-sentence Text views with IDs so we can scroll to the
+            // sentence containing the highlighted word with
+            // anchor: .center — keeping the active word vertically
+            // centered in the modal as playback advances.
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text(transcriptContent)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .id("transcript-bottom")
+                    switch displayMode {
+                    case .liveTranscription:
+                        Text(transcriptContent)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .id("transcript-bottom")
+                    case .readAlong:
+                        readAlongSentenceList
+                    }
                 }
                 .onChange(of: appState.liveTranscriptUnconfirmed) {
+                    guard case .liveTranscription = displayMode else { return }
                     withAnimation(.easeOut(duration: 0.15)) {
                         proxy.scrollTo("transcript-bottom", anchor: .bottom)
                     }
                 }
                 .onChange(of: appState.liveTranscriptConfirmed) {
+                    guard case .liveTranscription = displayMode else { return }
                     withAnimation(.easeOut(duration: 0.15)) {
                         proxy.scrollTo("transcript-bottom", anchor: .bottom)
                     }
                 }
                 .onChange(of: appState.readAlongRange) {
-                    // For read-along, follow the highlight so the
-                    // current word stays in view.
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                    guard case .readAlong = displayMode,
+                          let range = appState.readAlongRange,
+                          let sentenceIdx = sentenceIndexContaining(range.location)
+                    else { return }
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo("sentence-\(sentenceIdx)", anchor: .center)
                     }
+                }
+                .onChange(of: appState.readAlongText) {
+                    sentenceCache = computeSentenceChunks(appState.readAlongText)
+                }
+                .onAppear {
+                    sentenceCache = computeSentenceChunks(appState.readAlongText)
                 }
             }
 
@@ -402,6 +428,108 @@ struct LargeLiveTranscriptionView: View {
         case .readAlong:
             return attributedReadAlong
         }
+    }
+
+    // MARK: - Sentence-level read-along layout
+
+    /// One sentence pulled out of `readAlongText` by
+    /// `NSString.enumerateSubstrings(.bySentences)`. The `range` is
+    /// the position of the sentence in the original text — used to
+    /// (a) find which sentence contains the current readAlongRange
+    /// for scroll-targeting, and (b) translate readAlongRange into a
+    /// sentence-local range when applying the highlight.
+    private struct SentenceChunk: Hashable {
+        let range: NSRange
+        let text: String
+    }
+
+    private func computeSentenceChunks(_ text: String) -> [SentenceChunk] {
+        guard !text.isEmpty else { return [] }
+        var chunks: [SentenceChunk] = []
+        let ns = text as NSString
+        ns.enumerateSubstrings(
+            in: NSRange(location: 0, length: ns.length),
+            options: [.bySentences, .localized]
+        ) { substring, range, _, _ in
+            guard let s = substring, !s.isEmpty else { return }
+            chunks.append(SentenceChunk(range: range, text: s))
+        }
+        // Fallback: if .bySentences yielded nothing (text had no
+        // sentence-terminating punctuation), treat the whole thing as
+        // one chunk so the scroll target still resolves.
+        if chunks.isEmpty {
+            chunks.append(SentenceChunk(range: NSRange(location: 0, length: ns.length), text: text))
+        }
+        return chunks
+    }
+
+    private func sentenceIndexContaining(_ location: Int) -> Int? {
+        sentenceCache.firstIndex { NSLocationInRange(location, $0.range) }
+    }
+
+    /// VStack of per-sentence Texts. The sentence containing the
+    /// current highlight has its active word range tinted; the rest
+    /// render plain. SwiftUI only invalidates the chunk whose attributes
+    /// changed, so per-tick updates touch one Text not the whole stack.
+    @ViewBuilder
+    private var readAlongSentenceList: some View {
+        let size = CGFloat(appState.liveLargeWindowFontSize)
+        let highlightSentenceIdx: Int? = {
+            guard let r = appState.readAlongRange else { return nil }
+            return sentenceIndexContaining(r.location)
+        }()
+
+        VStack(alignment: .leading, spacing: max(size * 0.25, 8)) {
+            if sentenceCache.isEmpty {
+                Text("Preparing…")
+                    .font(.system(size: size, weight: .regular))
+                    .foregroundStyle(Color.secondary.opacity(0.6))
+                    .id("sentence-empty")
+            }
+            ForEach(Array(sentenceCache.enumerated()), id: \.offset) { idx, chunk in
+                Text(attributedSentence(chunk, isHighlightedChunk: idx == highlightSentenceIdx))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .id("sentence-\(idx)")
+            }
+        }
+    }
+
+    /// Build the AttributedString for one sentence, applying the
+    /// word-level highlight ONLY if this is the sentence the
+    /// readAlongRange currently lives in.
+    private func attributedSentence(_ chunk: SentenceChunk, isHighlightedChunk: Bool) -> AttributedString {
+        let size = CGFloat(appState.liveLargeWindowFontSize)
+        let highContrast = appState.liveLargeWindowHighContrast
+
+        var s = AttributedString(chunk.text)
+        s.font = .system(size: size, weight: highContrast ? .semibold : .regular)
+        s.foregroundColor = .primary
+
+        guard isHighlightedChunk,
+              let absoluteRange = appState.readAlongRange,
+              absoluteRange.length > 0
+        else { return s }
+
+        // Translate the absolute range into chunk-local coordinates.
+        let localLoc = absoluteRange.location - chunk.range.location
+        let localEnd = localLoc + absoluteRange.length
+        guard localLoc >= 0,
+              localEnd <= chunk.text.utf16.count
+        else { return s }
+
+        let startIdx = String.Index(utf16Offset: localLoc, in: chunk.text)
+        let endIdx = String.Index(utf16Offset: localEnd, in: chunk.text)
+        guard startIdx < chunk.text.endIndex,
+              endIdx <= chunk.text.endIndex,
+              let lower = AttributedString.Index(startIdx, within: s),
+              let upper = AttributedString.Index(endIdx, within: s)
+        else { return s }
+
+        let highlightRange = lower..<upper
+        s[highlightRange].backgroundColor = Color.yellow.opacity(0.35)
+        s[highlightRange].foregroundColor = .primary
+        return s
     }
 
     /// Read-along rendering: full source text + a colored background
