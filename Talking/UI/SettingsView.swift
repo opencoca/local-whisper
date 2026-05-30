@@ -1,6 +1,7 @@
 import SwiftUI
 import Carbon.HIToolbox
 import AVFoundation
+import AppKit
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
@@ -1382,6 +1383,10 @@ struct VoiceSettingsView: View {
     @EnvironmentObject var appState: AppState
     @State private var voices: [AVSpeechSynthesisVoice] = []
     @State private var samplePlaying: Bool = false
+    /// Mirrors AVSpeechSynthesizer.PersonalVoiceAuthorizationStatus
+    /// raw value so the @State doesn't carry a macOS-14-only type.
+    /// 0 = notDetermined, 1 = denied, 2 = unsupported, 3 = authorized.
+    @State private var personalVoiceStatus: UInt = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1391,7 +1396,7 @@ struct VoiceSettingsView: View {
                         Text("Voice")
                             .font(.title2)
                             .fontWeight(.semibold)
-                        Text("Pick the voice Sage.is Talking uses for spoken output. Premium and Enhanced voices appear here once you install them in System Settings → Accessibility → Spoken Content → Manage Voices.")
+                        Text("Pick the voice Sage.is Talking uses for spoken output. The Siri voices are downloadable in System Settings — Premium tier is what Siri actually uses (the same neural models).")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -1474,7 +1479,7 @@ struct VoiceSettingsView: View {
             }
         }
         .onAppear {
-            voices = AVSpeechSynthesisVoice.speechVoices()
+            refreshVoices()
         }
     }
 
@@ -1482,43 +1487,169 @@ struct VoiceSettingsView: View {
 
     @ViewBuilder
     private var voicePicker: some View {
-        let grouped = groupedVoices()
-        let hasPremium = grouped[.premium]?.isEmpty == false || grouped[.enhanced]?.isEmpty == false
+        let groups = groupedVoices()
+        let hasNeural = groups.contains { $0.tier == .premium || $0.tier == .enhanced }
 
-        VStack(alignment: .leading, spacing: 8) {
-            Picker("Voice", selection: $appState.ttsVoiceID) {
-                Text("System default").tag("")
-                ForEach([AVSpeechSynthesisVoiceQuality.premium, .enhanced, .default], id: \.self) { tier in
-                    if let list = grouped[tier], !list.isEmpty {
-                        Section(qualityLabel(tier)) {
-                            ForEach(list, id: \.identifier) { voice in
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Picker("Voice", selection: $appState.ttsVoiceID) {
+                    Text("System default").tag("")
+                    ForEach(groups, id: \.label) { group in
+                        Section(group.label) {
+                            ForEach(group.voices, id: \.identifier) { voice in
                                 Text("\(voice.name) — \(voice.language)").tag(voice.identifier)
                             }
                         }
                     }
                 }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
+                .pickerStyle(.menu)
+                .labelsHidden()
 
-            if !hasPremium {
-                Label("Install Premium or Enhanced voices in System Settings → Accessibility → Spoken Content → Manage Voices for higher-quality speech.", systemImage: "info.circle")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Button {
+                    refreshVoices()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .help("Re-scan installed system voices — click after downloading new voices in System Settings.")
+            }
+
+            if !hasNeural {
+                noNeuralVoicesHint
+            }
+
+            if #available(macOS 14.0, *) {
+                personalVoiceRow
             }
         }
     }
 
-    private func groupedVoices() -> [AVSpeechSynthesisVoiceQuality: [AVSpeechSynthesisVoice]] {
-        Dictionary(grouping: voices, by: { $0.quality })
-            .mapValues { $0.sorted(by: { $0.name < $1.name }) }
+    /// The empty-state actionable hint when only Default voices are
+    /// installed. Lists the actual Siri voice names + a deep link to
+    /// the System Settings pane that downloads them.
+    @ViewBuilder
+    private var noNeuralVoicesHint: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("No Siri-quality voices installed.", systemImage: "info.circle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("**Ava**, **Zoe**, **Evan**, and **Samantha (Premium)** are the same neural voices Siri uses. macOS doesn't pre-install them — download from System Settings (200–400 MB each).")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("Open System Voice Settings…") {
+                openVoiceSettings()
+            }
+            .controlSize(.small)
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
     }
 
-    private func qualityLabel(_ q: AVSpeechSynthesisVoiceQuality) -> String {
-        switch q {
-        case .premium: return "Premium (Siri-quality)"
-        case .enhanced: return "Enhanced"
-        default: return "Default"
+    /// Personal Voice (macOS 14+): clone of the user's own voice,
+    /// produced after a few hours of training under
+    /// System Settings → Accessibility → Personal Voice. Apps must
+    /// request authorization before AVSpeechSynthesisVoice surfaces
+    /// the user's cloned voices via .voiceTraits.contains(.isPersonalVoice).
+    @available(macOS 14.0, *)
+    @ViewBuilder
+    private var personalVoiceRow: some View {
+        let status = AVSpeechSynthesizer.PersonalVoiceAuthorizationStatus(rawValue: personalVoiceStatus) ?? .notDetermined
+        switch status {
+        case .notDetermined:
+            HStack {
+                Label("Personal Voice — read text in your own cloned voice", systemImage: "person.wave.2")
+                    .font(.caption)
+                Spacer()
+                Button("Allow access…") { requestPersonalVoiceAccess() }
+                    .controlSize(.small)
+            }
+        case .authorized:
+            // Personal voices now appear in the grouped picker above
+            // under their own section. No further UI needed here, but
+            // we surface a small confirmation so users know it's on.
+            Label("Personal Voice access granted.", systemImage: "checkmark.shield")
+                .font(.caption)
+                .foregroundStyle(.green)
+        case .denied:
+            Label("Personal Voice access denied. Re-enable in System Settings → Privacy & Security → Personal Voice.", systemImage: "exclamationmark.shield")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .unsupported:
+            Label("This Mac doesn't support Personal Voice (Apple Silicon + macOS 14+ required).", systemImage: "lock")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        @unknown default:
+            EmptyView()
+        }
+    }
+
+    // MARK: - Voice grouping
+
+    /// Ordered groups for the picker. Personal voices come first
+    /// (user's own), then Premium (Siri-quality), then Enhanced, then
+    /// Default. Empty groups are dropped.
+    private func groupedVoices() -> [VoiceGroup] {
+        let personal: [AVSpeechSynthesisVoice]
+        if #available(macOS 14.0, *) {
+            personal = voices
+                .filter { $0.voiceTraits.contains(.isPersonalVoice) }
+                .sorted { $0.name < $1.name }
+        } else {
+            personal = []
+        }
+        let personalIDs = Set(personal.map(\.identifier))
+        let nonPersonal = voices.filter { !personalIDs.contains($0.identifier) }
+        func filterAndSort(_ q: AVSpeechSynthesisVoiceQuality) -> [AVSpeechSynthesisVoice] {
+            nonPersonal.filter { $0.quality == q }.sorted { $0.name < $1.name }
+        }
+        return [
+            VoiceGroup(label: "Personal Voice (your cloned voice)", tier: .personal, voices: personal),
+            VoiceGroup(label: "Premium (Siri-quality, neural)", tier: .premium, voices: filterAndSort(.premium)),
+            VoiceGroup(label: "Enhanced (neural)", tier: .enhanced, voices: filterAndSort(.enhanced)),
+            VoiceGroup(label: "Default (compact)", tier: .default, voices: filterAndSort(.default)),
+        ].filter { !$0.voices.isEmpty }
+    }
+
+    private struct VoiceGroup {
+        let label: String
+        let tier: Tier
+        let voices: [AVSpeechSynthesisVoice]
+
+        enum Tier { case personal, premium, enhanced, `default` }
+    }
+
+    // MARK: - Voice actions
+
+    private func refreshVoices() {
+        voices = AVSpeechSynthesisVoice.speechVoices()
+        if #available(macOS 14.0, *) {
+            personalVoiceStatus = AVSpeechSynthesizer.personalVoiceAuthorizationStatus.rawValue
+        }
+    }
+
+    /// Open the System Settings pane that lists downloadable voices.
+    /// macOS Sonoma renamed the Spoken Content pane; we try a couple
+    /// of URL schemes and fall back to the generic Universal Access
+    /// pane so the user is at most one click away from the right place.
+    private func openVoiceSettings() {
+        let candidates = [
+            "x-apple.systempreferences:com.apple.SpokenContent-Settings.extension",
+            "x-apple.systempreferences:com.apple.preference.universalaccess?Spoken_Content",
+            "x-apple.systempreferences:com.apple.preference.universalaccess",
+        ]
+        for raw in candidates {
+            if let url = URL(string: raw), NSWorkspace.shared.open(url) {
+                return
+            }
+        }
+    }
+
+    @available(macOS 14.0, *)
+    private func requestPersonalVoiceAccess() {
+        AVSpeechSynthesizer.requestPersonalVoiceAuthorization { status in
+            DispatchQueue.main.async {
+                personalVoiceStatus = status.rawValue
+                refreshVoices()
+            }
         }
     }
 
