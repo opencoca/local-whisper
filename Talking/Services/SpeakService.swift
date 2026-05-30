@@ -36,6 +36,13 @@ actor SpeakService {
     /// Only one of `synthesizer` / `nsSynth` / `sayProcess` is active
     /// at a time (the dispatcher in `speak()` preempts the others).
     private var sayProcess: Process?
+    /// Time-driven read-along simulator for the say backend. `say`
+    /// gives us no per-word callback, so we estimate the current
+    /// word from elapsed time × wpm, accounting for SIGSTOP pauses.
+    private var sayHighlightTask: Task<Void, Never>?
+    private var saySpeakingStartedAt: Date?
+    private var sayPauseStartedAt: Date?
+    private var sayTotalPausedDuration: TimeInterval = 0
     private var currentEngine: SpeechEngine?
     private var activeContinuation: CheckedContinuation<Void, Error>?
 
@@ -286,6 +293,7 @@ actor SpeakService {
         sayProcess = proc
         currentEngine = nil  // Sentinel: pause/stop check sayProcess first.
         progressContinuation.yield((myID, 0.0))
+        startSayHighlightSimulation(utteranceID: myID, text: text, wpm: wpm)
 
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             activeContinuation = cont
@@ -294,6 +302,7 @@ actor SpeakService {
             } catch {
                 activeContinuation = nil
                 sayProcess = nil
+                stopSayHighlightSimulation()
                 cont.resume(throwing: error)
                 return
             }
@@ -307,9 +316,84 @@ actor SpeakService {
     }
 
     fileprivate func sayCommandDidTerminate(utteranceID: UInt64) {
+        stopSayHighlightSimulation()
         progressContinuation.yield((utteranceID, 1.0))
         sayProcess = nil
         resolveActiveContinuation()
+    }
+
+    // MARK: - Say highlight simulator (time-driven, no per-word callback)
+
+    /// Start a Task that ticks every 80 ms and yields a range/progress
+    /// pair to the streams, estimating the current word from elapsed
+    /// time × the wpm we passed `say`. Pauses correctly: SIGSTOP
+    /// suspends both audio and our elapsed counter via
+    /// `sayPauseStartedAt`. Cancellation comes from
+    /// `stopSayHighlightSimulation` (terminate / preempt) or when the
+    /// process termination handler fires.
+    private func startSayHighlightSimulation(utteranceID: UInt64, text: String, wpm: Int) {
+        saySpeakingStartedAt = Date()
+        sayPauseStartedAt = nil
+        sayTotalPausedDuration = 0
+
+        // One-pass word-range enumeration. NSString.enumerateSubstrings
+        // with `.byWords` gives us the character ranges of every word
+        // — exactly what AV's willSpeakRange callback delivers, just
+        // without timing info.
+        var wordRanges: [NSRange] = []
+        let nsText = text as NSString
+        nsText.enumerateSubstrings(
+            in: NSRange(location: 0, length: nsText.length),
+            options: [.byWords, .localized]
+        ) { _, range, _, _ in
+            wordRanges.append(range)
+        }
+        guard !wordRanges.isEmpty else { return }
+        let frozen = wordRanges
+        let totalWords = Double(frozen.count)
+        // Floor at 0.5 s so a one-word utterance doesn't divide by ~0.
+        let expectedDuration = max(0.5, totalWords / Double(wpm) * 60.0)
+
+        sayHighlightTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 80_000_000)
+                if Task.isCancelled { return }
+                await self?.sayHighlightTick(
+                    utteranceID: utteranceID,
+                    wordRanges: frozen,
+                    expectedDuration: expectedDuration
+                )
+            }
+        }
+    }
+
+    private func sayHighlightTick(utteranceID: UInt64, wordRanges: [NSRange], expectedDuration: TimeInterval) {
+        guard sayProcess?.isRunning == true,
+              let startedAt = saySpeakingStartedAt else { return }
+
+        let now = Date()
+        var elapsed = now.timeIntervalSince(startedAt) - sayTotalPausedDuration
+        if let pausedAt = sayPauseStartedAt {
+            // Don't advance while paused — extend the "paused
+            // duration" up to now.
+            elapsed -= now.timeIntervalSince(pausedAt)
+        }
+        elapsed = max(0, elapsed)
+
+        let progress = min(elapsed / expectedDuration, 1.0)
+        let wordIdx = min(Int(progress * Double(wordRanges.count)), wordRanges.count - 1)
+        let range = wordRanges[wordIdx]
+
+        rangeContinuation.yield((utteranceID, range))
+        progressContinuation.yield((utteranceID, progress))
+    }
+
+    private func stopSayHighlightSimulation() {
+        sayHighlightTask?.cancel()
+        sayHighlightTask = nil
+        saySpeakingStartedAt = nil
+        sayPauseStartedAt = nil
+        sayTotalPausedDuration = 0
     }
 
     /// Preempt any in-flight utterance from any backend before starting
@@ -337,6 +421,7 @@ actor SpeakService {
             kill(p.processIdentifier, SIGCONT)
             p.terminate()
             sayProcess = nil
+            stopSayHighlightSimulation()
             prior?.resume(returning: ())
         }
     }
@@ -345,10 +430,15 @@ actor SpeakService {
     /// nothing is playing. For the `say` subprocess backend, this is
     /// SIGSTOP — the kernel suspends the process, audio cuts
     /// immediately at the kernel boundary (not at a word boundary
-    /// like the in-process engines).
+    /// like the in-process engines). The highlight simulator's
+    /// elapsed counter is paused too so the active word doesn't
+    /// drift forward while audio is suspended.
     func pause() {
         if let p = sayProcess, p.isRunning {
             kill(p.processIdentifier, SIGSTOP)
+            if sayPauseStartedAt == nil {
+                sayPauseStartedAt = Date()
+            }
             return
         }
         switch currentEngine {
@@ -362,9 +452,15 @@ actor SpeakService {
     }
 
     /// Resume a paused utterance. SIGCONT for the say subprocess
-    /// backend; native continueSpeaking() for AV / NS.
+    /// backend; native continueSpeaking() for AV / NS. The accrued
+    /// pause time is folded into `sayTotalPausedDuration` so the
+    /// highlight picks up where it left off.
     func resume() {
         if let p = sayProcess, p.isRunning {
+            if let pausedAt = sayPauseStartedAt {
+                sayTotalPausedDuration += Date().timeIntervalSince(pausedAt)
+                sayPauseStartedAt = nil
+            }
             kill(p.processIdentifier, SIGCONT)
             return
         }
@@ -400,6 +496,7 @@ actor SpeakService {
             kill(p.processIdentifier, SIGCONT)
             p.terminate()
             sayProcess = nil
+            stopSayHighlightSimulation()
         }
         prior?.resume(returning: ())
     }
