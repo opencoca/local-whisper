@@ -1628,17 +1628,22 @@ struct VoiceSettingsView: View {
                 )
             }
 
-            // Cold-start delay: 0–500 ms in 10 ms increments.
+            // Cold-start delay: 0–2000 ms in 10 ms increments. The
+            // upper bound is deliberately generous — on first-launch
+            // / cold-cache or under load `say` can take a beat well
+            // beyond the typical ~180 ms before audio actually
+            // reaches the speaker. Better to give power users the
+            // headroom than have them clipped at 500.
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text("Audio start delay")
                         .frame(width: 140, alignment: .leading)
-                    Slider(value: $appState.ttsSayColdStartLag, in: 0...0.5, step: 0.01)
-                    Text("\(Int(appState.ttsSayColdStartLag * 1000)) ms")
+                    Slider(value: $appState.ttsSayColdStartLag, in: 0...2.0, step: 0.01)
+                    Text(coldStartLagLabel)
                         .font(.system(.caption, design: .monospaced))
-                        .frame(width: 60, alignment: .trailing)
+                        .frame(width: 72, alignment: .trailing)
                 }
-                Text("Bump higher if the highlight starts moving before you hear audio. Lower if audio is already speaking by the time word 0 lights up.")
+                Text("Bump higher if the highlight starts moving before you hear audio. Lower if audio is already speaking by the time word 0 lights up. (Range: 0 ms – 2.00 s.)")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -1660,6 +1665,16 @@ struct VoiceSettingsView: View {
         }
         .padding(10)
         .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    /// Switches the cold-start-lag readout to seconds once it crosses
+    /// 1 s so users don't have to scan a four-digit ms value.
+    private var coldStartLagLabel: String {
+        let v = appState.ttsSayColdStartLag
+        if v >= 1.0 {
+            return String(format: "%.2f s", v)
+        }
+        return "\(Int(v * 1000)) ms"
     }
 
     /// The empty-state actionable hint when only Default voices are
