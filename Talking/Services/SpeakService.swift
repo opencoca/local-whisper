@@ -32,6 +32,10 @@ actor SpeakService {
     private var delegate: Delegate?
     private var nsSynth: NSSpeechSynthesizer?
     private var nsDelegate: NSSpeakDelegate?
+    /// Power-user backend: `/usr/bin/say` running as a subprocess.
+    /// Only one of `synthesizer` / `nsSynth` / `sayProcess` is active
+    /// at a time (the dispatcher in `speak()` preempts the others).
+    private var sayProcess: Process?
     private var currentEngine: SpeechEngine?
     private var activeContinuation: CheckedContinuation<Void, Error>?
 
@@ -127,7 +131,18 @@ actor SpeakService {
     /// - `"ns:<identifier>"` → NSSpeechSynthesizer voice (the
     ///   `say`-catalog superset)
     /// - bare identifier (legacy stored value) → assumed AV
-    func speak(text: String, voiceID: String?, rate: Float, pitch: Float) async throws {
+    ///
+    /// `useSayCommand` is the orthogonal power-user override: when
+    /// `true`, the in-process engines are bypassed and `/usr/bin/say`
+    /// is spawned as a subprocess regardless of the voice's engine
+    /// prefix. Loses read-along highlighting (no per-word callback)
+    /// but reaches whatever Apple's daemon exposes to the CLI tool.
+    func speak(text: String, voiceID: String?, rate: Float, pitch: Float, useSayCommand: Bool = false) async throws {
+        if useSayCommand {
+            let (_, id) = Self.decodeVoiceID(voiceID)
+            try await speakViaSayCommand(text: text, voiceID: id, rate: rate)
+            return
+        }
         let (engine, id) = Self.decodeVoiceID(voiceID)
         switch engine {
         case .avSpeechSynthesizer:
@@ -224,9 +239,118 @@ actor SpeakService {
         }
     }
 
+    /// Power-user backend. Spawns `/usr/bin/say` as a subprocess and
+    /// pipes the text in via stdin (no shell escaping, no injection
+    /// risk). Pause/resume use SIGSTOP / SIGCONT; stop sends SIGTERM
+    /// after first SIGCONT'ing in case the process is paused (else
+    /// SIGTERM is queued behind the pause and never delivers).
+    ///
+    /// No per-word callback is available from `say`, so the range
+    /// stream stays silent and the progress stream just emits
+    /// `(0.0)` at start and `(1.0)` on exit. Read-along works in
+    /// principle (the modal still opens with the source text) but
+    /// the active-word highlight stays absent — caller's choice.
+    private func speakViaSayCommand(text: String, voiceID: String?, rate: Float) async throws {
+        // Preempt across all three backends.
+        preemptInFlight()
+
+        nextUtteranceID &+= 1
+        let myID = nextUtteranceID
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+        var args: [String] = []
+        if let id = voiceID, !id.isEmpty {
+            args.append("-v")
+            args.append(id)
+        }
+        // say's -r is words-per-minute. Same mapping NS uses.
+        let wpm = Int((100 + rate * 300).rounded())
+        args.append("-r")
+        args.append(String(wpm))
+        proc.arguments = args
+
+        let stdin = Pipe()
+        proc.standardInput = stdin
+        // /dev/null the output so we don't leak the daemon's logs.
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
+
+        proc.terminationHandler = { [weak self] _ in
+            // Hop back to the actor; can't touch its state from here.
+            Task { [weak self] in
+                await self?.sayCommandDidTerminate(utteranceID: myID)
+            }
+        }
+
+        sayProcess = proc
+        currentEngine = nil  // Sentinel: pause/stop check sayProcess first.
+        progressContinuation.yield((myID, 0.0))
+
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            activeContinuation = cont
+            do {
+                try proc.run()
+            } catch {
+                activeContinuation = nil
+                sayProcess = nil
+                cont.resume(throwing: error)
+                return
+            }
+            // Pipe the text in. Closing the write side signals EOF so
+            // `say` knows where the text ends.
+            if let data = text.data(using: .utf8) {
+                stdin.fileHandleForWriting.write(data)
+            }
+            try? stdin.fileHandleForWriting.close()
+        }
+    }
+
+    fileprivate func sayCommandDidTerminate(utteranceID: UInt64) {
+        progressContinuation.yield((utteranceID, 1.0))
+        sayProcess = nil
+        resolveActiveContinuation()
+    }
+
+    /// Preempt any in-flight utterance from any backend before starting
+    /// a new one. Resumes the active continuation eagerly so the
+    /// late-arriving completion callback sees `activeContinuation == nil`
+    /// and is a no-op (same poka-yoke as the AV/NS preempt paths).
+    private func preemptInFlight() {
+        if let synth = synthesizer, synth.isSpeaking || synth.isPaused {
+            let prior = activeContinuation
+            activeContinuation = nil
+            synth.stopSpeaking(at: .immediate)
+            prior?.resume(returning: ())
+        }
+        if let s = nsSynth, s.isSpeaking {
+            let prior = activeContinuation
+            activeContinuation = nil
+            s.stopSpeaking()
+            prior?.resume(returning: ())
+        }
+        if let p = sayProcess, p.isRunning {
+            let prior = activeContinuation
+            activeContinuation = nil
+            // SIGCONT first in case it was paused, else SIGTERM is
+            // queued behind the stop and never delivers.
+            kill(p.processIdentifier, SIGCONT)
+            p.terminate()
+            sayProcess = nil
+            prior?.resume(returning: ())
+        }
+    }
+
     /// Pause the active utterance at the next word boundary. No-op if
-    /// nothing is playing.
+    /// nothing is playing. For the `say` subprocess backend, this is
+    /// SIGSTOP — the kernel suspends the process, audio cuts
+    /// immediately at the kernel boundary (not at a word boundary
+    /// like the in-process engines).
     func pause() {
+        if let p = sayProcess, p.isRunning {
+            kill(p.processIdentifier, SIGSTOP)
+            return
+        }
         switch currentEngine {
         case .avSpeechSynthesizer:
             synthesizer?.pauseSpeaking(at: .word)
@@ -237,8 +361,13 @@ actor SpeakService {
         }
     }
 
-    /// Resume a paused utterance. No-op if nothing is paused.
+    /// Resume a paused utterance. SIGCONT for the say subprocess
+    /// backend; native continueSpeaking() for AV / NS.
     func resume() {
+        if let p = sayProcess, p.isRunning {
+            kill(p.processIdentifier, SIGCONT)
+            return
+        }
         switch currentEngine {
         case .avSpeechSynthesizer:
             _ = synthesizer?.continueSpeaking()
@@ -257,11 +386,21 @@ actor SpeakService {
     /// late-arriving didCancel sees activeContinuation == nil and is
     /// a harmless no-op. Cancellation remains a successful return per
     /// the documented `speak()` contract.
+    ///
+    /// For the say subprocess backend, SIGCONT first (in case it's
+    /// SIGSTOPed from `pause()`) then SIGTERM via `terminate()` —
+    /// without the SIGCONT, SIGTERM would be queued behind the pause
+    /// and never deliver.
     func stop() {
         let prior = activeContinuation
         activeContinuation = nil
         synthesizer?.stopSpeaking(at: .immediate)
         nsSynth?.stopSpeaking()
+        if let p = sayProcess, p.isRunning {
+            kill(p.processIdentifier, SIGCONT)
+            p.terminate()
+            sayProcess = nil
+        }
         prior?.resume(returning: ())
     }
 
@@ -287,8 +426,13 @@ actor SpeakService {
     /// as `AudioData`. Uses a *separate* synthesizer instance so an
     /// in-progress live playback isn't interrupted. `AudioExporter`
     /// writes the result to disk. Dispatches by engine prefix on
-    /// `voiceID` (`"av:"` / `"ns:"`).
-    func renderToAudioData(text: String, voiceID: String?, rate: Float, pitch: Float) async throws -> AudioData {
+    /// `voiceID` (`"av:"` / `"ns:"`), or by `useSayCommand` for the
+    /// power-user backend.
+    func renderToAudioData(text: String, voiceID: String?, rate: Float, pitch: Float, useSayCommand: Bool = false) async throws -> AudioData {
+        if useSayCommand {
+            let (_, id) = Self.decodeVoiceID(voiceID)
+            return try await renderViaSayCommand(text: text, voiceID: id, rate: rate)
+        }
         let (engine, id) = Self.decodeVoiceID(voiceID)
         switch engine {
         case .avSpeechSynthesizer:
@@ -296,6 +440,64 @@ actor SpeakService {
         case .nsSpeechSynthesizer:
             return try await renderViaNS(text: text, voiceID: id, rate: rate)
         }
+    }
+
+    private func renderViaSayCommand(text: String, voiceID: String?, rate: Float) async throws -> AudioData {
+        // Have `say` write an AIFF to a temp file, then load it the
+        // same way renderViaNS does.
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("talking-say-render-\(UUID().uuidString).aiff")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+        var args: [String] = ["-o", tempURL.path]
+        if let id = voiceID, !id.isEmpty {
+            args.append("-v")
+            args.append(id)
+        }
+        let wpm = Int((100 + rate * 300).rounded())
+        args.append("-r")
+        args.append(String(wpm))
+        proc.arguments = args
+
+        let stdin = Pipe()
+        proc.standardInput = stdin
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
+
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            proc.terminationHandler = { p in
+                if p.terminationStatus == 0 {
+                    cont.resume(returning: ())
+                } else {
+                    cont.resume(throwing: SpeakError.bufferTypeMismatch)
+                }
+            }
+            do {
+                try proc.run()
+            } catch {
+                cont.resume(throwing: error)
+                return
+            }
+            if let data = text.data(using: .utf8) {
+                stdin.fileHandleForWriting.write(data)
+            }
+            try? stdin.fileHandleForWriting.close()
+        }
+
+        let file = try AVAudioFile(forReading: tempURL)
+        let sourceFormat = file.processingFormat
+        let frameCount = AVAudioFrameCount(file.length)
+        guard frameCount > 0,
+              let buffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: frameCount)
+        else { throw SpeakError.bufferTypeMismatch }
+        try file.read(into: buffer)
+        guard let channelData = buffer.floatChannelData?[0] else {
+            throw SpeakError.bufferTypeMismatch
+        }
+        let samples = Array(UnsafeBufferPointer(start: channelData, count: Int(buffer.frameLength)))
+        return AudioData(samples: samples, sampleRate: Int(sourceFormat.sampleRate))
     }
 
     private func renderViaAV(text: String, voiceID: String?, rate: Float, pitch: Float) async throws -> AudioData {

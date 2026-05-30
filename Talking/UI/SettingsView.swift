@@ -1458,6 +1458,31 @@ struct VoiceSettingsView: View {
 
                     Divider()
 
+                    VStack(alignment: .leading, spacing: 12) {
+                        Toggle("Use /usr/bin/say subprocess (power user)", isOn: $appState.ttsUseSayCommand)
+                        Text("Routes every utterance through Apple's `say` command instead of AVSpeech / NSSpeech in-process. Trade-offs: read-along highlighting is gone (no per-word callback from a subprocess), pause/resume run via SIGSTOP/SIGCONT (kernel-boundary, not word-boundary), and there's a ~50–100 ms cold-start per utterance.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if appState.ttsUseSayCommand {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Label("Hit Siri voices that aren't in the picker", systemImage: "sparkles")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                Text("`say` *without* a -v argument uses whatever's set as your **System Voice** — and that setting can point at a Siri voice that doesn't appear in `say -v \"?\"` discovery. To hear Siri herself read your text:\n\n  1. Pick **System default** in the Voice dropdown above.\n  2. Go to System Voice Settings and set your System Voice to a Siri voice.\n  3. Click Speak — `say` runs with no -v and the daemon falls back to the Siri voice.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Button("Open System Voice Settings…") {
+                                    openVoiceSettings()
+                                }
+                                .controlSize(.small)
+                            }
+                            .padding(10)
+                            .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                        }
+                    }
+
+                    Divider()
+
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Speak hotkey")
                             .font(.headline)

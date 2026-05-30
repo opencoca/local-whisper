@@ -256,6 +256,15 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(showReadAlongWindow, forKey: "showReadAlongWindow") }
     }
 
+    /// Power-user toggle: when on, every utterance routes through
+    /// `/usr/bin/say` as a subprocess rather than AV / NSSpeech.
+    /// Gains whatever Apple's daemon exposes to the CLI tool; loses
+    /// the per-word `willSpeakWord` callback (no read-along highlight)
+    /// and gains a ~50–100 ms cold-start before audio. Off by default.
+    @Published var ttsUseSayCommand: Bool {
+        didSet { UserDefaults.standard.set(ttsUseSayCommand, forKey: "ttsUseSayCommand") }
+    }
+
     // MARK: - Proxy Settings
     @Published var proxyEnabled: Bool {
         didSet { 
@@ -437,6 +446,7 @@ final class AppState: ObservableObject {
             self.speakHotkeyModifiers = [.maskControl, .maskAlternate, .maskShift]
         }
         self.showReadAlongWindow = UserDefaults.standard.object(forKey: "showReadAlongWindow") as? Bool ?? true
+        self.ttsUseSayCommand = UserDefaults.standard.object(forKey: "ttsUseSayCommand") as? Bool ?? false
 
         // Load proxy settings
         self.proxyEnabled = UserDefaults.standard.bool(forKey: "proxyEnabled")

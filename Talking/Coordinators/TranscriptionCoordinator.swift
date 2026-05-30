@@ -662,7 +662,8 @@ final class TranscriptionCoordinator: ObservableObject {
                 text: text,
                 voiceID: appState.ttsVoiceID.isEmpty ? nil : appState.ttsVoiceID,
                 rate: ttsAVRate(from: appState.ttsRate),
-                pitch: Float(appState.ttsPitch)
+                pitch: Float(appState.ttsPitch),
+                useSayCommand: appState.ttsUseSayCommand
             )
             appState.speakState = .idle
             appState.readAlongRange = nil
@@ -736,7 +737,8 @@ final class TranscriptionCoordinator: ObservableObject {
             text: text,
             voiceID: appState.ttsVoiceID.isEmpty ? nil : appState.ttsVoiceID,
             rate: ttsAVRate(from: appState.ttsRate),
-            pitch: Float(appState.ttsPitch)
+            pitch: Float(appState.ttsPitch),
+            useSayCommand: appState.ttsUseSayCommand
         )
         try await audioExporter.exportToFile(audio: audio, to: url, format: format)
     }
