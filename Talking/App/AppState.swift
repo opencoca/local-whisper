@@ -408,7 +408,17 @@ final class AppState: ObservableObject {
         self.liveLargeWindowFloating = UserDefaults.standard.object(forKey: "liveLargeWindowFloating") as? Bool ?? true
 
         // v1.2.0 Two-Way Voice settings (persisted)
-        self.ttsVoiceID = UserDefaults.standard.string(forKey: "ttsVoiceID") ?? ""
+        // Legacy migration: ttsVoiceID used to be a bare AV identifier
+        // (e.g. "com.apple.voice.premium.en-US.Ava"). v1.2.0 adds a
+        // SpeechEngine prefix ("av:" or "ns:") so the dispatcher can
+        // route. Up-rev any unprefixed value to "av:..." so the
+        // picker's tags match.
+        let storedVoiceID = UserDefaults.standard.string(forKey: "ttsVoiceID") ?? ""
+        if storedVoiceID.isEmpty || storedVoiceID.contains(":") {
+            self.ttsVoiceID = storedVoiceID
+        } else {
+            self.ttsVoiceID = "av:\(storedVoiceID)"
+        }
         self.ttsRate = UserDefaults.standard.object(forKey: "ttsRate") as? Double ?? 0.5
         self.ttsPitch = UserDefaults.standard.object(forKey: "ttsPitch") as? Double ?? 1.0
         if let raw = UserDefaults.standard.string(forKey: "ttsDefaultSource"),

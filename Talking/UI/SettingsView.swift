@@ -1381,7 +1381,7 @@ struct AboutView: View {
 /// button, and the read-along window toggle.
 struct VoiceSettingsView: View {
     @EnvironmentObject var appState: AppState
-    @State private var voices: [AVSpeechSynthesisVoice] = []
+    @State private var voiceInfos: [SpeakVoiceInfo] = []
     @State private var samplePlaying: Bool = false
     /// Mirrors AVSpeechSynthesizer.PersonalVoiceAuthorizationStatus
     /// raw value so the @State doesn't carry a macOS-14-only type.
@@ -1487,8 +1487,9 @@ struct VoiceSettingsView: View {
 
     @ViewBuilder
     private var voicePicker: some View {
-        let groups = groupedVoices()
+        let groups = groupedVoiceInfos()
         let hasNeural = groups.contains { $0.tier == .premium || $0.tier == .enhanced }
+        let hasSayOnly = groups.contains { $0.tier == .sayOnly }
 
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -1496,8 +1497,8 @@ struct VoiceSettingsView: View {
                     Text("System default").tag("")
                     ForEach(groups, id: \.label) { group in
                         Section(group.label) {
-                            ForEach(group.voices, id: \.identifier) { voice in
-                                Text("\(voice.name) — \(voice.language)").tag(voice.identifier)
+                            ForEach(group.voices) { v in
+                                Text("\(v.name) — \(v.language)").tag(v.encodedID)
                             }
                         }
                     }
@@ -1515,6 +1516,12 @@ struct VoiceSettingsView: View {
 
             if !hasNeural {
                 noNeuralVoicesHint
+            }
+
+            if hasSayOnly {
+                Label("Voices from the legacy synth (the same catalog `say` uses) are tagged \"via say\". They play back fine and the read-along highlight still works — but Apple deprecated this framework in macOS 14, so don't expect new voices here over time.", systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             if #available(macOS 14.0, *) {
@@ -1584,43 +1591,48 @@ struct VoiceSettingsView: View {
 
     // MARK: - Voice grouping
 
-    /// Ordered groups for the picker. Personal voices come first
-    /// (user's own), then Premium (Siri-quality), then Enhanced, then
-    /// Default. Empty groups are dropped.
-    private func groupedVoices() -> [VoiceGroup] {
-        let personal: [AVSpeechSynthesisVoice]
-        if #available(macOS 14.0, *) {
-            personal = voices
-                .filter { $0.voiceTraits.contains(.isPersonalVoice) }
+    /// Ordered groups for the picker. Personal Voice first, then
+    /// AV's neural tiers (Premium / Enhanced), then AV's compact
+    /// Default tier, then NS-only voices (regional + novelty) under
+    /// their own labeled section. Empty groups are dropped.
+    private func groupedVoiceInfos() -> [InfoGroup] {
+        let personal = voiceInfos.filter { $0.isPersonalVoice }.sorted { $0.name < $1.name }
+        let personalIDs = Set(personal.map(\.id))
+        let rest = voiceInfos.filter { !personalIDs.contains($0.id) }
+        func avFilter(_ q: SpeakVoiceInfo.Quality) -> [SpeakVoiceInfo] {
+            rest.filter { $0.engine == .avSpeechSynthesizer && $0.quality == q }
                 .sorted { $0.name < $1.name }
-        } else {
-            personal = []
         }
-        let personalIDs = Set(personal.map(\.identifier))
-        let nonPersonal = voices.filter { !personalIDs.contains($0.identifier) }
-        func filterAndSort(_ q: AVSpeechSynthesisVoiceQuality) -> [AVSpeechSynthesisVoice] {
-            nonPersonal.filter { $0.quality == q }.sorted { $0.name < $1.name }
-        }
+        let nsAll = rest.filter { $0.engine == .nsSpeechSynthesizer }
+            .sorted { (a, b) -> Bool in
+                // Premium/Enhanced first within NS, then everything else.
+                if a.quality != b.quality { return a.quality < b.quality }
+                return a.name < b.name
+            }
         return [
-            VoiceGroup(label: "Personal Voice (your cloned voice)", tier: .personal, voices: personal),
-            VoiceGroup(label: "Premium (Siri-quality, neural)", tier: .premium, voices: filterAndSort(.premium)),
-            VoiceGroup(label: "Enhanced (neural)", tier: .enhanced, voices: filterAndSort(.enhanced)),
-            VoiceGroup(label: "Default (compact)", tier: .default, voices: filterAndSort(.default)),
+            InfoGroup(label: "Personal Voice (your cloned voice)", tier: .personal, voices: personal),
+            InfoGroup(label: "Premium (Siri-quality, neural)", tier: .premium, voices: avFilter(.premium)),
+            InfoGroup(label: "Enhanced (neural)", tier: .enhanced, voices: avFilter(.enhanced)),
+            InfoGroup(label: "Default (compact)", tier: .default, voices: avFilter(.default)),
+            InfoGroup(label: "Extra voices via say (regional + novelty)", tier: .sayOnly, voices: nsAll),
         ].filter { !$0.voices.isEmpty }
     }
 
-    private struct VoiceGroup {
+    private struct InfoGroup {
         let label: String
         let tier: Tier
-        let voices: [AVSpeechSynthesisVoice]
+        let voices: [SpeakVoiceInfo]
 
-        enum Tier { case personal, premium, enhanced, `default` }
+        enum Tier { case personal, premium, enhanced, `default`, sayOnly }
     }
 
     // MARK: - Voice actions
 
     private func refreshVoices() {
-        voices = AVSpeechSynthesisVoice.speechVoices()
+        Task {
+            let merged = await appState.speakService.availableVoiceInfos()
+            await MainActor.run { voiceInfos = merged }
+        }
         if #available(macOS 14.0, *) {
             personalVoiceStatus = AVSpeechSynthesizer.personalVoiceAuthorizationStatus.rawValue
         }
