@@ -324,6 +324,25 @@ actor SpeakService {
 
     // MARK: - Say highlight simulator (time-driven, no per-word callback)
 
+    /// `/usr/bin/say` has a cold-start before audio actually reaches
+    /// the speaker (process spawn + stdin pipe drain + audio engine
+    /// boot). We shift `saySpeakingStartedAt` this far into the
+    /// future so the simulator's `elapsed` clamps to 0 — and the
+    /// highlight stays on word 0 — until real audio has started.
+    /// 180 ms is the median observed on a modern Apple Silicon Mac;
+    /// older hardware will land slightly long here, newer slightly
+    /// short, both within a single word at typical rates.
+    private static let sayColdStartLag: TimeInterval = 0.18
+
+    /// `say` honors `-r` as a target but typically delivers a bit
+    /// faster than the requested wpm — Premium / Siri voices in
+    /// particular have a natural briskness that overshoots the
+    /// spec. Inflate our internal wpm so the simulated highlight
+    /// keeps up with the actual speech rate. Empirically tuned;
+    /// the rate slider in Settings remains the user-facing tempo
+    /// knob.
+    private static let saySpeedFactor: Double = 1.15
+
     /// Start a Task that ticks every 80 ms and yields a range/progress
     /// pair to the streams, estimating the current word from elapsed
     /// time × the wpm we passed `say`. Pauses correctly: SIGSTOP
@@ -332,7 +351,11 @@ actor SpeakService {
     /// `stopSayHighlightSimulation` (terminate / preempt) or when the
     /// process termination handler fires.
     private func startSayHighlightSimulation(utteranceID: UInt64, text: String, wpm: Int) {
-        saySpeakingStartedAt = Date()
+        // Anchor the elapsed counter `sayColdStartLag` into the
+        // future. The first ~180 ms of ticks see negative elapsed
+        // (clamped to 0), so the highlight pins to word 0 until
+        // audio actually starts.
+        saySpeakingStartedAt = Date().addingTimeInterval(Self.sayColdStartLag)
         sayPauseStartedAt = nil
         sayTotalPausedDuration = 0
 
@@ -351,8 +374,12 @@ actor SpeakService {
         guard !wordRanges.isEmpty else { return }
         let frozen = wordRanges
         let totalWords = Double(frozen.count)
+        // Inflate the requested wpm by the empirical speed factor so
+        // our simulated rate matches the rate `say` actually delivers
+        // (the requested -r is a target, not a guarantee).
+        let calibratedWPM = Double(wpm) * Self.saySpeedFactor
         // Floor at 0.5 s so a one-word utterance doesn't divide by ~0.
-        let expectedDuration = max(0.5, totalWords / Double(wpm) * 60.0)
+        let expectedDuration = max(0.5, totalWords / calibratedWPM * 60.0)
 
         sayHighlightTask = Task { [weak self] in
             while !Task.isCancelled {
