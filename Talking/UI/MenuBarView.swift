@@ -476,12 +476,17 @@ struct MenuBarView: View {
                   : "Waiting for the model to load…")
 
             HStack {
-                Button("Settings...") {
-                    // Post notification to open settings
+                Button {
                     NotificationCenter.default.post(name: NSNotification.Name("ShowSettings"), object: nil)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "gearshape")
+                        Text("Settings...")
+                    }
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(.accentColor)
+                .help("Open Sage.is Talking settings")
 
                 Spacer()
 
