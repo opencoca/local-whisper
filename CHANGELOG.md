@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Users upgrading from a `com.localwhisper.app` install will be prompted by macOS to re-grant Accessibility + Microphone once under the new `is.sage.talking` identity. First-launch banner explains the change.
 - Large transcription window is now mode-aware: *live transcription* / *file transcription* / *read-along TTS*. Footer controls adapt per mode (Clear+Stop+Copy / Stop+Copy / Pause+Resume+Stop+Save Audio).
+- Popover footer shows a gear icon next to *Settings…* and the status-bar click is gated while the large window is being used for live transcription or read-along — clicking the icon surfaces the big window instead of stacking a popover on top of it.
 
 ### Fixed
 
