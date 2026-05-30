@@ -1648,30 +1648,36 @@ struct VoiceSettingsView: View {
                     .foregroundStyle(.tertiary)
             }
 
-            // Speed factor: 0.50×–1.60× in 0.01 increments. Lower end
+            // Speed factor: 0.50×–2.50× in 0.01 increments. Lower end
             // covers novelty voices (Bells, Bubbles, Cellos) that
             // largely ignore -r and produce a near-fixed ~40–80 wpm
             // cadence; upper end covers fast Siri / Premium voices
-            // plus short-word-count drift in English. Empirical
-            // measurements via `say -o file.aiff` + afinfo landed
-            // Aaron Enhanced at 1.03–1.14× and Samantha at 1.11–1.27×
-            // (rate-dependent), so 1.60 leaves headroom for hotter
-            // Premium voices without inviting users to mask real
-            // bugs with absurdly high values. Going beyond 1.60×
-            // suggests something else is wrong — investigate the
-            // elapsed-time math, not the slider.
+            // AND the compound effect of an over-set cold-start lag
+            // (see caption). Empirical measurements via
+            // `say -o file.aiff` + afinfo landed Aaron Enhanced at
+            // 1.03–1.14× and Samantha at 1.11–1.27× (rate-dependent),
+            // so the raw voice-rate factor should sit well under
+            // 1.30 for system voices. Values above 1.6 usually mean
+            // the user is also compensating for cold-start
+            // over-estimation; the caption tells them so.
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text("Speed correction")
                         .frame(width: 140, alignment: .leading)
-                    Slider(value: $appState.ttsSaySpeedFactor, in: 0.50...1.60, step: 0.01)
+                    Slider(value: $appState.ttsSaySpeedFactor, in: 0.50...2.50, step: 0.01)
                     Text(String(format: "%.2f×", appState.ttsSaySpeedFactor))
                         .font(.system(.caption, design: .monospaced))
                         .frame(width: 60, alignment: .trailing)
                 }
-                Text("Higher = highlight moves faster (use when audio is ahead of the highlight). Lower = highlight moves slower (use when the highlight is zipping past the voice). (Range: 0.50× – 1.60×.)")
+                Text("Higher = highlight moves faster (use when audio is ahead of the highlight). Lower = highlight moves slower. (Range: 0.50× – 2.50×.)")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                if appState.ttsSaySpeedFactor > 1.60 {
+                    Label("If you're above ~1.6× and still lagging audio, try **lowering Audio start delay** too. An over-set cold-start pins the highlight at word 0 after audio has already begun — the highlight then has to sprint the rest of the way to catch up. Shorter utterances feel this more.", systemImage: "lightbulb")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .padding(.top, 2)
+                }
             }
         }
         .padding(10)
