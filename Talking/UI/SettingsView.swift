@@ -408,6 +408,8 @@ struct ShortcutSettingsView: View {
     @State private var currentShortcut = HotkeyManager.shared.shortcutString
     @State private var isRecordingLive = false
     @State private var currentLiveShortcut = HotkeyManager.shared.liveShortcutString
+    @State private var isRecordingSpeak = false
+    @State private var currentSpeakShortcut = HotkeyManager.shared.speakShortcutString
 
     var body: some View {
         ScrollView {
@@ -417,7 +419,7 @@ struct ShortcutSettingsView: View {
                     Text("Keyboard Shortcuts")
                         .font(.title2)
                         .fontWeight(.semibold)
-                    Text("Two independent triggers — hold to record, or tap to start live transcription.")
+                    Text("Three independent triggers — hold to record, tap to toggle live transcription, tap to read the selection (or clipboard) aloud.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -503,6 +505,41 @@ struct ShortcutSettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.top, 4)
+                }
+
+                // Speak shortcut (v1.2.0)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Speak Shortcut (Selection → TTS)")
+                        .font(.headline)
+
+                    HStack(spacing: 16) {
+                        ShortcutRecorderView(
+                            isRecording: $isRecordingSpeak,
+                            currentShortcut: $currentSpeakShortcut,
+                            onSave: { keyCode, modifiers in
+                                HotkeyManager.shared.setSpeakHotkey(keyCode: keyCode, modifiers: modifiers)
+                                appState.speakHotkeyKeyCode = keyCode
+                                appState.speakHotkeyModifiers = modifiers
+                            },
+                            readBack: { HotkeyManager.shared.speakShortcutString }
+                        )
+
+                        Spacer()
+
+                        if !isRecordingSpeak {
+                            Button("Change") {
+                                isRecordingSpeak = true
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    .padding()
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(12)
+
+                    Text("Reads the focused app's text selection aloud via the engine picked in **Voice → Voice**. Falls back to the clipboard when nothing is selected. Voice, rate, pitch, and the say-subprocess option all live in the Voice tab.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 
                 // Output method — applies to hold mode and the autoPaste
@@ -1496,9 +1533,12 @@ struct VoiceSettingsView: View {
                                 .background(Color.secondary.opacity(0.15))
                                 .clipShape(RoundedRectangle(cornerRadius: 6))
                             Spacer()
-                            Text("Rebind support coming in v1.x.")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
+                            Button("Change in Shortcuts…") {
+                                // Deep-link the sidebar over to the Shortcuts
+                                // tab (tag 2 — see SettingsView's sidebar list).
+                                appState.settingsDeepLink = 2
+                            }
+                            .controlSize(.small)
                         }
                     }
                 }
