@@ -339,14 +339,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc private func togglePopover() {
-        if let button = statusItem.button {
-            if popover.isShown {
-                popover.performClose(nil)
-            } else {
-                popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-                NSApp.activate(ignoringOtherApps: true)
-            }
+        guard let button = statusItem.button else { return }
+
+        if popover.isShown {
+            popover.performClose(nil)
+            return
         }
+
+        // Gate the popover when the large window is actively being used for
+        // live transcription or read-along TTS — the big window IS the UI
+        // for that mode, and yanking the popover open on top of it (or
+        // worse, stealing focus away from the dictation target during a
+        // hold-to-record sequence) is the opposite of what the user wants.
+        // Settings and Quit are still reachable from the macOS app menu.
+        let largeWindowIsActiveMode =
+            (largeLiveWindow?.isVisible ?? false) &&
+            (appState.isLiveActive || appState.speakState.isActive)
+        if largeWindowIsActiveMode {
+            // Focus the large window so the click still feels responsive.
+            largeLiveWindow?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        NSApp.activate(ignoringOtherApps: true)
     }
     
     private var settingsWindow: NSWindow?

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+## [1.2.0] — 2026-06-01
+
+### Added
+
 - **Rebrand to Sage.is Talking.** Source directory `LocalWhisper/` → `Talking/`; package + executable + `@main` struct renamed; bundle id `com.localwhisper.app` → `is.sage.talking`; log paths `~/Library/Logs/LocalWhisper.log` → `Talking.log`, `/tmp/localwispr_*` → `/tmp/talking_*`; dev signing identity `LocalWhisper Dev` → `Talking Dev`; About header reads *Sage.is Talking*; menu bar header reads *Talking*.
 - **Two-way voice — Speak text aloud.** Dedicated Speak hotkey (default `Ctrl+Option+Shift+Space`) reads selection-first, clipboard-fallback. Popover gains a text field, voice picker, rate + pitch sliders, and source buttons (Selection / Clipboard / File / URL). Pause / Resume / Stop top-level.
 - **Three TTS engines.** `AVSpeechSynthesizer` (Default / Enhanced / Premium / Personal Voice tiers), `NSSpeechSynthesizer` (the `say` catalog), and `/usr/bin/say` as a subprocess backend that unlocks Siri voices the in-process synth refuses to load.
@@ -22,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Users upgrading from a `com.localwhisper.app` install will be prompted by macOS to re-grant Accessibility + Microphone once under the new `is.sage.talking` identity. First-launch banner explains the change.
 - Large transcription window is now mode-aware: *live transcription* / *file transcription* / *read-along TTS*. Footer controls adapt per mode (Clear+Stop+Copy / Stop+Copy / Pause+Resume+Stop+Save Audio).
+- Popover footer shows a gear icon next to *Settings…* and the status-bar click is gated while the large window is being used for live transcription or read-along — clicking the icon surfaces the big window instead of stacking a popover on top of it.
+- App icon redesigned: large microphone glyph as the primary subject with the Sage.is hex constellation S as a brand badge in the bottom-right corner, on a macOS-style squircle background. The editable composite source is a self-contained `AppIcon.svg` in `Talking/Resources/AppIcon-source/` — both raster sources are inlined as base64 data URIs so position/size edits in any text editor or vector tool are one-file-and-rebuild. `build-icon.sh` re-renders `AppIcon.icns` from the SVG via rsvg-convert + sips + iconutil.
 
 ### Fixed
 
@@ -95,7 +107,8 @@ Initial publicly tagged release.
 - `isModelLoaded` state correctly reflects model-load completion.
 - CI app-launch step that hung the macOS runner.
 
-[Unreleased]: https://github.com/opencoca/local-whisper/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/opencoca/local-whisper/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/opencoca/local-whisper/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/opencoca/local-whisper/compare/v1.0.4...v1.1.0
 [1.0.4]: https://github.com/opencoca/local-whisper/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/opencoca/local-whisper/compare/v1.0.2...v1.0.3
