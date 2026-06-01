@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Users upgrading from a `com.localwhisper.app` install will be prompted by macOS to re-grant Accessibility + Microphone once under the new `is.sage.talking` identity. First-launch banner explains the change.
 - Large transcription window is now mode-aware: *live transcription* / *file transcription* / *read-along TTS*. Footer controls adapt per mode (Clear+Stop+Copy / Stop+Copy / Pause+Resume+Stop+Save Audio).
 - Popover footer shows a gear icon next to *Settings…* and the status-bar click is gated while the large window is being used for live transcription or read-along — clicking the icon surfaces the big window instead of stacking a popover on top of it.
-- App icon swapped to the Sage.is brand mark: hex constellation S with a microphone glyph below, on a macOS-style squircle background. The editable composite source (SVG + `sage-hex.png` + `sf-mic.png`) lives in `Talking/Resources/AppIcon-source/` along with a `build-icon.sh` script that re-renders `AppIcon.icns` from the SVG.
+- App icon swapped to the Sage.is brand mark: hex constellation S with a microphone glyph below, on a macOS-style squircle background. The editable composite source is a self-contained `AppIcon.svg` in `Talking/Resources/AppIcon-source/` — both raster sources are inlined as base64 data URIs so position/size edits in any text editor or vector tool are one-file-and-rebuild. `build-icon.sh` re-renders `AppIcon.icns` from the SVG via rsvg-convert + sips + iconutil.
 
 ### Fixed
 
