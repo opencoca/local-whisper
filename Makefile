@@ -211,6 +211,10 @@ release_preflight:
 		(echo "❌ create-dmg missing — run 'make setup'" && exit 1)
 	@test -f assets/dmg_background.png || \
 		(echo "❌ DMG background missing — run 'make setup'" && exit 1)
+	@test -d $(TAP_PATH)/Casks || \
+		(echo "❌ $(TAP_PATH)/Casks not found — clone Sage-is/homebrew-apps next to this repo, or set TAP_PATH=..." && exit 1)
+	@test -f $(TAP_PATH)/Casks/talking.rb || \
+		(echo "❌ $(TAP_PATH)/Casks/talking.rb missing — create it (or rename the old Casks/local-whisper.rb) before release_finish, so the tag/push doesn't race ahead of the cask" && exit 1)
 	@echo "  ✅ All checks passed"
 
 # Full release orchestrator: build → gh release → cask update + push.
