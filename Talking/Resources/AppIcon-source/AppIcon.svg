@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sage.is Talking, App icon source.
+
+  Edit this file to iterate the app icon, then re-render with the
+  build-icon.sh script next to it (sips + iconutil over the staged
+  PNGs). See build-icon.sh for the canonical pipeline.
+
+  Composition (1024 by 1024 canvas):
+    - macOS-style squircle background (rounded rect, rx=224, a close
+      approximation of the true Big Sur superellipse)
+    - Sage.is brand mark (hex constellation S) in the upper area,
+      roughly 680 by 680
+    - Microphone glyph (SF Symbol mic.fill rendered to PNG) in the
+      lower area, roughly 380 by 380
+    - Slight overlap at the join is intentional: the mic emerges from
+      the hex, reading as "Sage.is, voiced"
+
+  Files referenced:
+    - sage-hex.png, the canonical Sage.is favicon (from
+      sage.startr.cloud/static/icons/favicon.png)
+    - sf-mic.png, SF Symbol mic.fill rendered at 1024 px, tinted Sage
+      blue (#4068B3)
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1024" height="1024"
+     viewBox="0 0 1024 1024">
+
+  <!-- Squircle background. macOS uses a true superellipse; rounded-rect rx=224
+       is a close visual approximation that survives rendering through icns. -->
+  <rect width="1024" height="1024" rx="224" ry="224" fill="#FFFFFF"/>
+
+  <!-- Sage.is brand mark — hex constellation S, upper area, dominant.
+       Position: gravity=north, top offset +90, size 680×680. -->
+  <image xlink:href="sage-hex.png"
+         x="172" y="90" width="680" height="680"
+         preserveAspectRatio="xMidYMid meet"/>
+
+  <!-- Microphone glyph — voice cue, lower area, secondary weight.
+       Position: gravity=south, bottom offset +90, size 380×380. -->
+  <image xlink:href="sf-mic.png"
+         x="322" y="554" width="380" height="380"
+         preserveAspectRatio="xMidYMid meet"/>
+
+</svg>
