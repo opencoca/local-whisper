@@ -30,6 +30,7 @@ final class TranscriptionCoordinator: ObservableObject {
     private var recordingTask: Task<Void, Never>?
     private var speakStreamTask: Task<Void, Never>?
     private var speakRangeStreamTask: Task<Void, Never>?
+    private var speakParagraphStreamTask: Task<Void, Never>?
 
     /// Frontmost app captured at live-mode start so we can refocus it
     /// before pasting on stop. Cleared after paste completes.
@@ -85,6 +86,26 @@ final class TranscriptionCoordinator: ObservableObject {
                 if id < lastSeenID { continue }
                 lastSeenID = id
                 self?.appState?.readAlongRange = range
+            }
+        }
+        // v1.2.1 paragraph progress stream. Updates the speakState's
+        // paragraphIndex/paragraphCount in-place so the read-along
+        // footer can render "Paragraph N / M" without redrawing on
+        // every word boundary.
+        speakParagraphStreamTask = Task { [weak self] in
+            var lastSeenID: UInt64 = 0
+            for await (id, pi, pc) in speakService.paragraphStream {
+                guard let self else { return }
+                if id < lastSeenID { continue }
+                lastSeenID = id
+                let progress = self.appState?.speakState.progress ?? 0
+                if case .speaking = self.appState?.speakState {
+                    self.appState?.speakState = .speaking(progress: progress, paragraphIndex: pi, paragraphCount: pc)
+                } else if case .paused = self.appState?.speakState {
+                    self.appState?.speakState = .paused(progress: progress, paragraphIndex: pi, paragraphCount: pc)
+                } else if case .preparing = self.appState?.speakState {
+                    self.appState?.speakState = .speaking(progress: progress, paragraphIndex: pi, paragraphCount: pc)
+                }
             }
         }
     }
@@ -684,19 +705,23 @@ final class TranscriptionCoordinator: ObservableObject {
         guard let speakService, let appState else { return }
         await speakService.pause()
         let progress = appState.speakState.progress ?? 0
+        let pi = appState.speakState.paragraphIndex ?? 0
+        let pc = appState.speakState.paragraphCount ?? 1
         if appState.speakState.isActive {
-            appState.speakState = .paused(progress: progress)
+            appState.speakState = .paused(progress: progress, paragraphIndex: pi, paragraphCount: pc)
         }
     }
 
     /// Resume a paused utterance. Restores the saved progress instead
     /// of snapping to 0 — the read-along view's percentage display
     /// stays at the right value until the next willSpeak yield arrives.
+    /// Paragraph fields preserved so the footer hint doesn't blink to
+    /// "Paragraph 1/1" between pause and the next ParagraphPlayer yield.
     func resumeSpeak() async {
         guard let speakService, let appState else { return }
         await speakService.resume()
-        if case .paused(let progress) = appState.speakState {
-            appState.speakState = .speaking(progress: progress)
+        if case .paused(let progress, let pi, let pc) = appState.speakState {
+            appState.speakState = .speaking(progress: progress, paragraphIndex: pi, paragraphCount: pc)
         }
     }
 

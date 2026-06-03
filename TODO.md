@@ -174,6 +174,20 @@ heading by area (Services, UI, Coordinators, etc.).*
 
 ## Backlog
 
+- [ ] **`/usr/bin/say` read-along precision (v1.2.x)** #tts #ux
+  - v1.2.1 bounded drift per paragraph via ParagraphPlayer's true-duration interpolator, but within a single paragraph the highlight still uses word-uniformity. Long words and prosody pauses still throw it off subtly.
+  - v1.3 Kokoro will sidestep this entirely (phoneme timings or, worst case, the same per-paragraph interpolator on much-cleaner audio). Revisit after Kokoro lands — if Kokoro is the recommended path for accurate highlights, this becomes a "ship as-is" decision rather than a fix.
+  - Investigation if we do fix it pre-Kokoro: weight word durations by character count / syllable count instead of uniform 1/n. Cheap. Bounded improvement.
+
+- [ ] **Siri voices via `say` need precise config (v1.2.x)** #tts #power-user
+  - Siri voices only work via the `/usr/bin/say` subprocess when **all** of: (1) `Use /usr/bin/say subprocess` is on, (2) the in-app voice picker is set to *System default*, AND (3) the user's System Settings → Spoken Content default voice is itself a Siri voice. Any of those off → falls back to a non-Siri voice silently.
+  - Document in the Voice tab help text as a known power-user mode for v1.2.x.
+  - Investigation if we fix it: query `defaults read com.apple.speech.synthesis.general.prefs SelectedVoiceID` and surface it in the voice picker as a labelled option so the routing isn't invisible. Or: shell out to `say -v ?` and merge that list with the AV catalog so Siri voices show up in the picker by their actual `say`-known identifier instead of relying on system-default redirection.
+
+- [ ] **ParagraphPlayer pre-render cancellation cleanup (v1.2.x)** #tts #cleanup
+  - If the user clicks Stop while paragraph N+1 is being pre-rendered, the `say -o` subprocess finishes its render (~200 ms) and writes an orphan AIFF to `/tmp` (gets swept on reboot). Functionally invisible but a slow `/tmp` leak.
+  - Fix: wrap `runSayToAIFF`'s Process spawn in `withTaskCancellationHandler { ... } onCancel: { /* terminate process */ }` so cancellation kills the subprocess promptly. ~15 LOC.
+
 - [ ] **Cut Sage.is Talking 1.2.0** #release
   - [ ] `make setup` on the maintainer's box (one-time install of `gh` + `create-dmg`)
   - [ ] Fork repo to `Startr-Cloud/local-whisper`; update `origin` remote

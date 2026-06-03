@@ -131,46 +131,58 @@ struct LargeLiveTranscriptionView: View {
         }
     }
 
-    /// Read-along mode controls: Pause / Resume / Stop. Save Audio is
-    /// available from the popover's SpeakPanel — keeping it off the
-    /// large window keeps the footer single-purpose for playback
-    /// control while text is being read.
+    /// Read-along mode controls: Pause / Resume / Stop, with an
+    /// optional "Paragraph N / M" hint above the controls when the
+    /// chunked-say lane (v1.2.1+) is active. Save Audio lives on the
+    /// popover's SpeakPanel — keeping it off the large window keeps
+    /// the footer single-purpose for playback control while text is
+    /// being read.
     private var readAlongFooter: some View {
-        HStack(spacing: 12) {
-            if case .paused = appState.speakState {
-                Button {
-                    Task { await appState.coordinator.resumeSpeak() }
+        VStack(spacing: 6) {
+            if let count = appState.speakState.paragraphCount, count > 1,
+               let idx = appState.speakState.paragraphIndex {
+                Text("Paragraph \(idx + 1) / \(count)")
+                    .font(.system(size: appState.liveLargeWindowFontSize * 0.22, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .accessibilityLabel("Paragraph \(idx + 1) of \(count)")
+            }
+
+            HStack(spacing: 12) {
+                if case .paused = appState.speakState {
+                    Button {
+                        Task { await appState.coordinator.resumeSpeak() }
+                    } label: {
+                        Label("Resume", systemImage: "play.fill")
+                            .font(.system(size: appState.liveLargeWindowFontSize * 0.35))
+                            .padding(.horizontal, 8)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                } else {
+                    Button {
+                        Task { await appState.coordinator.pauseSpeak() }
+                    } label: {
+                        Label("Pause", systemImage: "pause.fill")
+                            .font(.system(size: appState.liveLargeWindowFontSize * 0.35))
+                            .padding(.horizontal, 8)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                }
+
+                Spacer()
+
+                Button(role: .destructive) {
+                    Task { await appState.coordinator.stopSpeak() }
                 } label: {
-                    Label("Resume", systemImage: "play.fill")
+                    Label("Stop", systemImage: "stop.fill")
                         .font(.system(size: appState.liveLargeWindowFontSize * 0.35))
                         .padding(.horizontal, 8)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-            } else {
-                Button {
-                    Task { await appState.coordinator.pauseSpeak() }
-                } label: {
-                    Label("Pause", systemImage: "pause.fill")
-                        .font(.system(size: appState.liveLargeWindowFontSize * 0.35))
-                        .padding(.horizontal, 8)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
+                .keyboardShortcut(.escape, modifiers: [])
             }
-
-            Spacer()
-
-            Button(role: .destructive) {
-                Task { await appState.coordinator.stopSpeak() }
-            } label: {
-                Label("Stop", systemImage: "stop.fill")
-                    .font(.system(size: appState.liveLargeWindowFontSize * 0.35))
-                    .padding(.horizontal, 8)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .keyboardShortcut(.escape, modifiers: [])
         }
         .padding(.top, 16)
     }

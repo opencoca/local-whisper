@@ -43,6 +43,12 @@ actor SpeakService {
     private var saySpeakingStartedAt: Date?
     private var sayPauseStartedAt: Date?
     private var sayTotalPausedDuration: TimeInterval = 0
+    /// v1.2.1 paragraph-chunked say lane. Non-nil only while a
+    /// multi-paragraph utterance is in flight. Exactly one of
+    /// `sayProcess` and `paragraphPlayer` is non-nil at a time —
+    /// the fast-path in `speakViaSayCommand` decides which.
+    private var paragraphPlayer: ParagraphPlayer?
+    private var paragraphPlayerTask: Task<Void, Error>?
     private var currentEngine: SpeechEngine?
     private var activeContinuation: CheckedContinuation<Void, Error>?
 
@@ -58,6 +64,15 @@ actor SpeakService {
     private let rangeContinuation: AsyncStream<(UInt64, NSRange)>.Continuation
     nonisolated let rangeStream: AsyncStream<(UInt64, NSRange)>
 
+    /// v1.2.1 paragraph-progress stream. Yields `(utteranceID,
+    /// paragraphIndex, paragraphCount)` at each paragraph boundary
+    /// from the chunked say lane (and v1.3 Kokoro). AV/NS/single-
+    /// paragraph say never yield here. Coordinator forwards updates
+    /// to `appState.speakState` so the read-along footer can render
+    /// "Paragraph N / M".
+    private let paragraphContinuation: AsyncStream<(UInt64, Int, Int)>.Continuation
+    nonisolated let paragraphStream: AsyncStream<(UInt64, Int, Int)>
+
     init() {
         var pc: AsyncStream<(UInt64, Double)>.Continuation!
         self.progressStream = AsyncStream { pc = $0 }
@@ -66,6 +81,10 @@ actor SpeakService {
         var rc: AsyncStream<(UInt64, NSRange)>.Continuation!
         self.rangeStream = AsyncStream { rc = $0 }
         self.rangeContinuation = rc
+
+        var qc: AsyncStream<(UInt64, Int, Int)>.Continuation!
+        self.paragraphStream = AsyncStream { qc = $0 }
+        self.paragraphContinuation = qc
     }
 
     /// Returns the installed system voices from the AV catalog only.
@@ -284,6 +303,22 @@ actor SpeakService {
         coldStartLag: TimeInterval,
         speedFactor: Double
     ) async throws {
+        // v1.2.1 fast-path: route multi-paragraph input through the
+        // ParagraphPlayer (pre-render + AVAudioPlayer + per-paragraph
+        // ground-truth-duration interpolator). Single-paragraph input
+        // falls through to the legacy direct-Process path below, which
+        // keeps the calibration sliders relevant for short utterances.
+        let paragraphs = TextSplitter.paragraphs(from: text)
+        if paragraphs.count > 1 {
+            try await speakViaParagraphChunker(
+                paragraphs: paragraphs,
+                voiceID: voiceID,
+                rate: rate,
+                fullText: text
+            )
+            return
+        }
+
         // Preempt across all three backends.
         preemptInFlight()
 
@@ -352,6 +387,63 @@ actor SpeakService {
         progressContinuation.yield((utteranceID, 1.0))
         sayProcess = nil
         resolveActiveContinuation()
+    }
+
+    /// v1.2.1 chunked say lane. Routes multi-paragraph input through
+    /// `ParagraphPlayer` so each paragraph plays from a pre-rendered
+    /// AIFF whose true duration anchors the highlight interpolator.
+    /// Calibration sliders (`sayColdStartLag`, `saySpeedFactor`) don't
+    /// apply here — the player computes word timing from
+    /// `AVAudioFile`'s actual frame count.
+    private func speakViaParagraphChunker(
+        paragraphs: [String],
+        voiceID: String?,
+        rate: Float,
+        fullText: String
+    ) async throws {
+        preemptInFlight()
+
+        nextUtteranceID &+= 1
+        let myID = nextUtteranceID
+
+        let player = ParagraphPlayer(
+            engine: SayRenderEngine(speakService: self),
+            progressContinuation: progressContinuation,
+            rangeContinuation: rangeContinuation,
+            paragraphContinuation: paragraphContinuation
+        )
+        paragraphPlayer = player
+        currentEngine = nil  // Sentinel — preempt/pause/stop check paragraphPlayer first.
+
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            activeContinuation = cont
+            paragraphPlayerTask = Task { [weak self] in
+                do {
+                    try await player.start(
+                        paragraphs: paragraphs,
+                        voiceID: voiceID,
+                        rate: rate,
+                        utteranceID: myID,
+                        fullText: fullText
+                    )
+                    await self?.paragraphPlayerDidFinish(success: true, error: nil)
+                } catch {
+                    await self?.paragraphPlayerDidFinish(success: false, error: error)
+                }
+            }
+        }
+    }
+
+    fileprivate func paragraphPlayerDidFinish(success: Bool, error: Error?) {
+        paragraphPlayer = nil
+        paragraphPlayerTask = nil
+        let prior = activeContinuation
+        activeContinuation = nil
+        if let error, !success {
+            prior?.resume(throwing: error)
+        } else {
+            prior?.resume(returning: ())
+        }
     }
 
     // MARK: - Say highlight simulator (time-driven, no per-word callback)
@@ -477,6 +569,18 @@ actor SpeakService {
             stopSayHighlightSimulation()
             prior?.resume(returning: ())
         }
+        if let player = paragraphPlayer {
+            let prior = activeContinuation
+            activeContinuation = nil
+            paragraphPlayerTask?.cancel()
+            paragraphPlayerTask = nil
+            paragraphPlayer = nil
+            // Fire-and-forget the player tear-down; its own stop()
+            // resolves the paragraphPlayerDidFinish callback into a
+            // no-op now that activeContinuation is already nil.
+            Task { await player.stop() }
+            prior?.resume(returning: ())
+        }
     }
 
     /// Pause the active utterance at the next word boundary. No-op if
@@ -486,7 +590,15 @@ actor SpeakService {
     /// like the in-process engines). The highlight simulator's
     /// elapsed counter is paused too so the active word doesn't
     /// drift forward while audio is suspended.
-    func pause() {
+    func pause() async {
+        if let player = paragraphPlayer {
+            // Synchronously await so the highlight task observes the
+            // pause anchor on its next tick. A fire-and-forget Task
+            // races the highlight task and lets the highlight advance
+            // one or two more words before freezing.
+            await player.pause()
+            return
+        }
         if let p = sayProcess, p.isRunning {
             kill(p.processIdentifier, SIGSTOP)
             if sayPauseStartedAt == nil {
@@ -508,7 +620,11 @@ actor SpeakService {
     /// backend; native continueSpeaking() for AV / NS. The accrued
     /// pause time is folded into `sayTotalPausedDuration` so the
     /// highlight picks up where it left off.
-    func resume() {
+    func resume() async {
+        if let player = paragraphPlayer {
+            await player.resume()
+            return
+        }
         if let p = sayProcess, p.isRunning {
             if let pausedAt = sayPauseStartedAt {
                 sayTotalPausedDuration += Date().timeIntervalSince(pausedAt)
@@ -540,7 +656,7 @@ actor SpeakService {
     /// SIGSTOPed from `pause()`) then SIGTERM via `terminate()` —
     /// without the SIGCONT, SIGTERM would be queued behind the pause
     /// and never deliver.
-    func stop() {
+    func stop() async {
         let prior = activeContinuation
         activeContinuation = nil
         synthesizer?.stopSpeaking(at: .immediate)
@@ -550,6 +666,12 @@ actor SpeakService {
             p.terminate()
             sayProcess = nil
             stopSayHighlightSimulation()
+        }
+        if let player = paragraphPlayer {
+            paragraphPlayerTask?.cancel()
+            paragraphPlayerTask = nil
+            paragraphPlayer = nil
+            await player.stop()
         }
         prior?.resume(returning: ())
     }
@@ -595,9 +717,21 @@ actor SpeakService {
     private func renderViaSayCommand(text: String, voiceID: String?, rate: Float) async throws -> AudioData {
         // Have `say` write an AIFF to a temp file, then load it the
         // same way renderViaNS does.
+        let tempURL = try await runSayToAIFF(text: text, voiceID: voiceID, rate: rate)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        return try loadAudioData(fromAIFFAt: tempURL)
+    }
+
+    /// Render `text` to a temporary AIFF file via `/usr/bin/say -o` and
+    /// return the file URL. The caller owns the file's lifecycle —
+    /// either pass it to AVAudioPlayer for playback (ParagraphPlayer
+    /// path) or hand it to `loadAudioData(fromAIFFAt:)` and delete it
+    /// (Save Speech As… path). Shared between `renderViaSayCommand`
+    /// and the v1.2.1 `SayRenderEngine` so the subprocess plumbing has
+    /// one home.
+    func runSayToAIFF(text: String, voiceID: String?, rate: Float) async throws -> URL {
         let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("talking-say-render-\(UUID().uuidString).aiff")
-        defer { try? FileManager.default.removeItem(at: tempURL) }
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/say")
@@ -635,8 +769,16 @@ actor SpeakService {
             }
             try? stdin.fileHandleForWriting.close()
         }
+        return tempURL
+    }
 
-        let file = try AVAudioFile(forReading: tempURL)
+    /// Load an on-disk AIFF (or other AVAudioFile-supported format)
+    /// into the PCM `AudioData` shape `AudioExporter` consumes. The
+    /// non-private surface lets `ParagraphPlayer` re-load a paragraph
+    /// for re-render scenarios; the live playback path streams the
+    /// file directly through AVAudioPlayer and bypasses this.
+    func loadAudioData(fromAIFFAt url: URL) throws -> AudioData {
+        let file = try AVAudioFile(forReading: url)
         let sourceFormat = file.processingFormat
         let frameCount = AVAudioFrameCount(file.length)
         guard frameCount > 0,

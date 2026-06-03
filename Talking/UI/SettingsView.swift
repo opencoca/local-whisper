@@ -1628,6 +1628,10 @@ struct VoiceSettingsView: View {
                 )
             }
 
+            Label("Multi-paragraph input is auto-anchored at each paragraph boundary — these sliders only apply to single-paragraph utterances. Defaults are fine for almost everyone.", systemImage: "info.circle")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
             // Cold-start delay: 0–2000 ms in 10 ms increments. The
             // upper bound is deliberately generous — on first-launch
             // / cold-cache or under load `say` can take a beat well
