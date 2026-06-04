@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+## [1.2.1] — 2026-06-03
+
+### Added
+
 - **Paragraph chunker for the `/usr/bin/say` lane.** Multi-paragraph input now plays one paragraph at a time, with paragraph N+1 pre-rendered to a temp AIFF in the background while paragraph N plays through `AVAudioPlayer`. Each paragraph's read-along highlight is anchored to the AIFF's true `AVAudioFile` duration instead of the v1.2.0 word-count × WPM estimate, so timing errors can't compound across the document. New `ParagraphPlayer` actor + `ParagraphRenderEngine` protocol + `SayRenderEngine` adapter + `TextSplitter`; the protocol is the shared abstraction that v1.3 Kokoro plugs into.
 - Read-along footer now shows a small "Paragraph N / M" hint when the chunker is active.
 
@@ -20,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `/usr/bin/say` read-along drift on multi-paragraph input: the simulator's per-utterance estimate could be off by 5% on long documents, compounding into 3+ seconds of mis-highlight by the end. The chunker bounds drift to a single paragraph's worth and re-anchors at every boundary. Within-paragraph word tracking still uses word-uniformity interpolation; precise per-word timing for `say` voices is queued for v1.3 alongside Kokoro.
+
+### Known issues
+
+- Pause with `say` voices doesn't freeze the highlight cleanly — audio pauses correctly, but the read-along marker either creeps forward or jumps on resume. Tracked for v1.2.x follow-up; v1.3 Kokoro is the structural fix.
 
 ### Removed
 
@@ -115,7 +129,8 @@ Initial publicly tagged release.
 - `isModelLoaded` state correctly reflects model-load completion.
 - CI app-launch step that hung the macOS runner.
 
-[Unreleased]: https://github.com/opencoca/local-whisper/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/opencoca/local-whisper/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/opencoca/local-whisper/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/opencoca/local-whisper/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/opencoca/local-whisper/compare/v1.0.4...v1.1.0
 [1.0.4]: https://github.com/opencoca/local-whisper/compare/v1.0.3...v1.0.4

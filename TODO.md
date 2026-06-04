@@ -176,8 +176,15 @@ heading by area (Services, UI, Coordinators, etc.).*
 
 - [ ] **`/usr/bin/say` read-along precision (v1.2.x)** #tts #ux
   - v1.2.1 bounded drift per paragraph via ParagraphPlayer's true-duration interpolator, but within a single paragraph the highlight still uses word-uniformity. Long words and prosody pauses still throw it off subtly.
+  - User-validated calibration on Alexander's machine (2026-06-03): *Audio start delay* ≈ 1.00 s (way higher than the 0.18 s default), *Speed correction* ≈ 1.17× (close to the 1.15 default). Beginning of an utterance is off; mid-stream settles in. System-dependent — don't change global defaults, but consider promoting "calibrate-your-machine" guidance up.
   - v1.3 Kokoro will sidestep this entirely (phoneme timings or, worst case, the same per-paragraph interpolator on much-cleaner audio). Revisit after Kokoro lands — if Kokoro is the recommended path for accurate highlights, this becomes a "ship as-is" decision rather than a fix.
   - Investigation if we do fix it pre-Kokoro: weight word durations by character count / syllable count instead of uniform 1/n. Cheap. Bounded improvement.
+
+- [ ] **Pause with `say` highlighting (v1.2.x)** #tts #bug
+  - Per smoke test 2026-06-03: pause via the `say` lane doesn't freeze the highlight cleanly. Audio pauses (SIGSTOP / AVAudioPlayer.pause) but the highlight either keeps creeping forward or jumps oddly on resume.
+  - v1.2.1's ParagraphPlayer fix (AVAudioPlayer.currentTime as playhead source) was *supposed* to nail this for the multi-paragraph path — investigate whether the issue is in the single-paragraph legacy simulator (which still uses sayPauseStartedAt / sayTotalPausedDuration with the same multi-actor-hop pattern that broke ParagraphPlayer), or whether the multi-paragraph path also still has it.
+  - Likely fix in the legacy simulator: same atomic single-hop refactor I applied to ParagraphPlayer.highlightTick — read `(sayPauseStartedAt, sayTotalPausedDuration, saySpeakingStartedAt)` in one actor method instead of three separate `await self.x` reads.
+  - Tracked here rather than blocking v1.2.1 because the pre-render + Paragraph N/M + per-paragraph anchoring win still ships meaningful value, and the pause-with-say bug is the same surface the user already has on v1.2.0.
 
 - [ ] **Siri voices via `say` need precise config (v1.2.x)** #tts #power-user
   - Siri voices only work via the `/usr/bin/say` subprocess when **all** of: (1) `Use /usr/bin/say subprocess` is on, (2) the in-app voice picker is set to *System default*, AND (3) the user's System Settings → Spoken Content default voice is itself a Siri voice. Any of those off → falls back to a non-Siri voice silently.
