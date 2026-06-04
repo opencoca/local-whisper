@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `/usr/bin/say` read-along drift on multi-paragraph input: the simulator's per-utterance estimate could be off by 5% on long documents, compounding into 3+ seconds of mis-highlight by the end. The chunker bounds drift to a single paragraph's worth and re-anchors at every boundary. Within-paragraph word tracking still uses word-uniformity interpolation; precise per-word timing for `say` voices is queued for v1.3 alongside Kokoro.
 
+### Known issues
+
+- Pause with `say` voices doesn't freeze the highlight cleanly — audio pauses correctly, but the read-along marker either creeps forward or jumps on resume. Tracked for v1.2.x follow-up; v1.3 Kokoro is the structural fix.
+
 ### Removed
 
 ## [1.2.0] — 2026-06-01
