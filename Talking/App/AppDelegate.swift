@@ -563,8 +563,10 @@ final class StatusItemDropView: NSView {
 
     /// Conservative allow-list. AVFoundation can decode more, but these
     /// are the common containers Whisper users actually feed in.
+    /// v1.2.1 adds .mov / .m4v video containers (audio track gets
+    /// extracted by AudioFileLoader's AVAssetReader fallback path).
     private static let audioExtensions: Set<String> = [
-        "wav", "mp3", "m4a", "mp4", "aac", "flac", "aiff", "aif", "caf", "ogg", "opus"
+        "wav", "mp3", "m4a", "mp4", "mov", "m4v", "aac", "flac", "aiff", "aif", "caf", "ogg", "opus"
     ]
 
     override init(frame: NSRect) {

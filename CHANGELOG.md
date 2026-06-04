@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Video file transcription** (`.mp4`, `.mov`, `.m4v`). `AudioFileLoader` falls back to an `AVAssetReader` audio-track extraction path whenever `AVAudioFile` refuses a container — so any video AVFoundation can read now feeds the existing chunked WhisperKit pipeline. File picker and drag-drop both accept video containers; reader asks for samples in WhisperKit's exact shape (16 kHz mono Float32 non-interleaved) so no extra resample step is needed.
+
 ### Changed
 
 ### Fixed

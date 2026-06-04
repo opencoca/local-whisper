@@ -472,7 +472,7 @@ struct MenuBarView: View {
             .foregroundColor(.accentColor)
             .disabled(!appState.isModelLoaded || appState.isLiveActive)
             .help(appState.isModelLoaded
-                  ? "Pick an audio file (.wav, .mp3, .m4a, .flac, .aiff, .caf)"
+                  ? "Pick an audio or video file (.wav, .mp3, .m4a, .mp4, .mov, .m4v, .flac, .aiff, .caf)"
                   : "Waiting for the model to load…")
 
             HStack {
@@ -511,11 +511,14 @@ struct MenuBarView: View {
     /// URL to the coordinator's file-transcription entry point.
     private func pickFileToTranscribe() {
         let panel = NSOpenPanel()
-        panel.title = "Choose an audio file to transcribe"
+        panel.title = "Choose an audio or video file to transcribe"
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.allowedContentTypes = [.audio]
+        // Both .audio and .movie cover the whole drag-drop surface from
+        // AppDelegate. AudioFileLoader's AVAssetReader fallback handles
+        // video containers — only the audio track is read.
+        panel.allowedContentTypes = [.audio, .movie, .mpeg4Movie, .quickTimeMovie]
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task { @MainActor in
