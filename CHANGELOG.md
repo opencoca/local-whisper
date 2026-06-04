@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+## [1.2.2] — 2026-06-04
+
+### Added
+
 - **Video file transcription** (`.mp4`, `.mov`, `.m4v`). `AudioFileLoader` falls back to an `AVAssetReader` audio-track extraction path whenever `AVAudioFile` refuses a container — so any video AVFoundation can read now feeds the existing chunked WhisperKit pipeline. File picker and drag-drop both accept video containers; reader asks for samples in WhisperKit's exact shape (16 kHz mono Float32 non-interleaved) so no extra resample step is needed.
 
 ### Changed
@@ -131,7 +141,8 @@ Initial publicly tagged release.
 - `isModelLoaded` state correctly reflects model-load completion.
 - CI app-launch step that hung the macOS runner.
 
-[Unreleased]: https://github.com/opencoca/local-whisper/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/opencoca/local-whisper/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/opencoca/local-whisper/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/opencoca/local-whisper/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/opencoca/local-whisper/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/opencoca/local-whisper/compare/v1.0.4...v1.1.0
