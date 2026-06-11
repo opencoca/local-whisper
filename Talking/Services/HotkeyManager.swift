@@ -30,6 +30,49 @@ private func hotkeyLogToFile(_ message: String) {
     }
 }
 
+/// A "double-tap a modifier key" gesture, mirroring macOS Dictation's
+/// "Press ⌃/⌘ twice" trigger. `.off` disables it for a lane. ⌃/⌘/⌥ are
+/// detected on the CGEvent tap; 🌐 (Fn) is only reliable through the
+/// NSEvent monitor, so it's detected there.
+enum DoubleTapModifier: String, CaseIterable, Identifiable {
+    case off, control, command, option, fn
+
+    var id: String { rawValue }
+
+    /// Short label for the Settings picker.
+    var label: String {
+        switch self {
+        case .off:     return "Off"
+        case .control: return "⌃⌃"
+        case .command: return "⌘⌘"
+        case .option:  return "⌥⌥"
+        case .fn:      return "🌐🌐"
+        }
+    }
+
+    /// The CGEventFlags bit this gesture watches, or nil when off.
+    var flag: CGEventFlags? {
+        switch self {
+        case .off:     return nil
+        case .control: return .maskControl
+        case .command: return .maskCommand
+        case .option:  return .maskAlternate
+        case .fn:      return .maskSecondaryFn
+        }
+    }
+}
+
+private extension CGEventFlags {
+    /// Count of tracked modifier bits set (⌃⌘⌥⇧Fn) — used to tell a lone
+    /// modifier tap apart from a chord.
+    var trackedModifierCount: Int {
+        var n = 0
+        for m in [CGEventFlags.maskControl, .maskCommand, .maskAlternate,
+                  .maskShift, .maskSecondaryFn] where contains(m) { n += 1 }
+        return n
+    }
+}
+
 /// Manages global keyboard shortcuts using CGEvent API.
 ///
 /// Supports three independent hotkeys on a single event tap:
@@ -58,6 +101,12 @@ final class HotkeyManager {
     private(set) var speakKeyCode: UInt16 = UInt16(kVK_Space)
     private(set) var speakModifiers: CGEventFlags = [.maskControl, .maskAlternate, .maskShift]
 
+    // Double-tap-a-modifier triggers (dictation-style), per lane. Off by
+    // default; opt in to ⌃⌃ / ⌘⌘ / ⌥⌥ / 🌐🌐 independently. v1.2.x.
+    private(set) var recordDoubleTap: DoubleTapModifier = .off
+    private(set) var liveDoubleTap: DoubleTapModifier = .off
+    private(set) var speakDoubleTap: DoubleTapModifier = .off
+
     fileprivate var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var fnKeyMonitor: Any?
@@ -68,9 +117,33 @@ final class HotkeyManager {
     var onLiveKeyDown: (() -> Void)?
     var onSpeakKeyDown: (() -> Void)?
 
+    // TTS playback controls — the keyboard Play/Pause media key and Esc, gated
+    // to only act while TTS is active (otherwise they pass through). v1.2.x.
+    var onTogglePlayPauseTTS: (() -> Void)?
+    var onStopTTS: (() -> Void)?
+
+    /// Set from `AppState` when speak state changes. Gates the media-key / Esc
+    /// playback controls so they only fire — and only consume the key — while
+    /// TTS is preparing / speaking / paused. Off otherwise, so Esc and the
+    /// media keys behave normally everywhere else.
+    var ttsPlaybackActive = false
+
     private var isKeyDown = false
     private var liveIsKeyDown = false
     private var speakIsKeyDown = false
+
+    // Double-tap-a-modifier gesture state. ⌃/⌘/⌥ taps arrive on the CGEvent
+    // tap; 🌐/Fn through the NSEvent monitor. A clean lone-modifier press+release
+    // is a "tap"; two of the same within `doubleTapWindow` fire the gesture.
+    private static let doubleTapModifierMask: CGEventFlags =
+        [.maskControl, .maskCommand, .maskAlternate, .maskShift, .maskSecondaryFn]
+    private var presenceMods: CGEventFlags = []
+    private var tapCandidate: CGEventFlags?
+    private var tapCandidateValid = false
+    private var lastTapFlag: CGEventFlags?
+    private var lastTapTime: CFAbsoluteTime = 0
+    private let doubleTapWindow: CFAbsoluteTime = 0.30
+    private var recordDoubleTapActive = false
 
     private init() {}
     
@@ -91,7 +164,8 @@ final class HotkeyManager {
         
         let eventMask: CGEventMask = (1 << CGEventType.keyDown.rawValue) |
                                       (1 << CGEventType.keyUp.rawValue) |
-                                      (1 << CGEventType.flagsChanged.rawValue)
+                                      (1 << CGEventType.flagsChanged.rawValue) |
+                                      (1 << 14)  // NX_SYSDEFINED — media (Play/Pause) keys
         
         // Create event tap at HID level to intercept before system handlers (like dictation)
         // Using .cghidEventTap captures events at the lowest level, before macOS processes them
@@ -146,8 +220,9 @@ final class HotkeyManager {
     
     /// Start monitoring for Globe/Fn key using NSEvent
     private func startFnKeyMonitor() {
-        // Only monitor if Globe key (179) or Fn key (63) is the configured hotkey
-        guard keyCode == 179 || keyCode == 63 else { return }
+        // Only monitor if the Globe/Fn key is the configured hotkey, OR a lane
+        // opted into the 🌐🌐 double-tap (the CGEvent tap doesn't see Fn reliably).
+        guard keyCode == 179 || keyCode == 63 || anyFnDoubleTap else { return }
         
         // Use BOTH global and local monitors to catch the Fn key
         // Global monitor catches events when app is not focused
@@ -188,11 +263,14 @@ final class HotkeyManager {
             }
         }
         
-        // Detect Globe/Fn key press and release (only when no other modifiers)
+        // A clean Fn press/release drives two things: the Globe-as-hold-key
+        // lane (only when the hold shortcut actually IS the Globe key), and the
+        // Fn double-tap gesture (when any lane opted into 🌐🌐).
+        let holdKeyIsGlobe = (keyCode == 63 || keyCode == 179)
+
         if fnPressed && !hasOtherModifiers && !fnKeyWasPressed {
-            // Fn key just pressed alone
             fnKeyWasPressed = true
-            if !isKeyDown {
+            if holdKeyIsGlobe && !isKeyDown {
                 isKeyDown = true
                 print("[HotkeyManager] Globe/Fn key DOWN - starting recording")
                 DispatchQueue.main.async { [weak self] in
@@ -200,15 +278,20 @@ final class HotkeyManager {
                 }
             }
         } else if !fnPressed && fnKeyWasPressed {
-            // Fn key just released
             fnKeyWasPressed = false
-            if isKeyDown {
+            if holdKeyIsGlobe && isKeyDown {
                 isKeyDown = false
                 print("[HotkeyManager] Globe/Fn key UP - stopping recording")
                 DispatchQueue.main.async { [weak self] in
                     self?.onKeyUp?()
                 }
             }
+            // Fn double-tap: a clean Fn tap just completed.
+            if anyFnDoubleTap { completeTap(.maskSecondaryFn) }
+        } else if fnPressed && hasOtherModifiers {
+            // Fn pressed as part of a chord — not a clean tap.
+            fnKeyWasPressed = false
+            lastTapFlag = nil
         }
     }
     
@@ -242,6 +325,14 @@ final class HotkeyManager {
     /// Handle keyboard event
     fileprivate func handleEvent(_ event: CGEvent) -> Bool {
         let type = event.type
+
+        // Media keys arrive as NX_SYSDEFINED (type 14), not a named
+        // CGEventType, and their keycode lives in the NSEvent payload — handle
+        // them before the keyboard logic below.
+        if type.rawValue == 14 {
+            return handleMediaKey(event)
+        }
+
         let currentKeyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let currentFlags = event.flags
         
@@ -274,6 +365,18 @@ final class HotkeyManager {
 
         switch type {
         case .keyDown:
+            // A real keypress means any held modifier is part of a chord, not a
+            // double-tap — break tap tracking so chords never misfire.
+            invalidateDoubleTapTracking()
+
+            // Esc stops TTS while it's playing/paused. Gated on ttsPlaybackActive
+            // so Esc is only consumed then — it passes through normally otherwise.
+            if currentKeyCode == UInt16(kVK_Escape) && ttsPlaybackActive {
+                hotkeyLogger.info("Esc → stop TTS")
+                DispatchQueue.main.async { [weak self] in self?.onStopTTS?() }
+                return true
+            }
+
             // Speak hotkey — single-press toggle, same shape as live.
             // Resolves to selection-or-clipboard in the coordinator and
             // starts AVSpeechSynthesizer playback. v1.2.0+.
@@ -352,7 +455,10 @@ final class HotkeyManager {
             print(logMsg)
             NSLog("%@", logMsg)
             hotkeyLogger.debug("Flags changed: \(currentFlags.rawValue), keyCode: \(currentKeyCode)")
-            
+
+            // ⌃/⌘/⌥ double-tap detection (observational; never consumes).
+            detectModifierDoubleTap(currentFlags)
+
             // Check if Globe/Fn key is the trigger (no other key, just the modifier)
             // Globe key sets maskSecondaryFn when pressed
             if keyCode == 63 || keyCode == 179 {
@@ -497,6 +603,167 @@ final class HotkeyManager {
         if let savedModifiers = UserDefaults.standard.object(forKey: "speakHotkeyModifiers") as? UInt64 {
             speakModifiers = CGEventFlags(rawValue: savedModifiers)
         }
+    }
+
+    // MARK: - Double-tap-a-modifier gestures (dictation-style)
+
+    func setRecordDoubleTap(_ mod: DoubleTapModifier) {
+        recordDoubleTap = mod
+        UserDefaults.standard.set(mod.rawValue, forKey: "recordDoubleTap")
+        refreshFnMonitorForDoubleTap()
+        hotkeyLogger.info("Record double-tap set to \(mod.rawValue)")
+    }
+
+    func setLiveDoubleTap(_ mod: DoubleTapModifier) {
+        liveDoubleTap = mod
+        UserDefaults.standard.set(mod.rawValue, forKey: "liveDoubleTap")
+        refreshFnMonitorForDoubleTap()
+        hotkeyLogger.info("Live double-tap set to \(mod.rawValue)")
+    }
+
+    func setSpeakDoubleTap(_ mod: DoubleTapModifier) {
+        speakDoubleTap = mod
+        UserDefaults.standard.set(mod.rawValue, forKey: "speakDoubleTap")
+        refreshFnMonitorForDoubleTap()
+        hotkeyLogger.info("Speak double-tap set to \(mod.rawValue)")
+    }
+
+    /// Load saved double-tap gestures from UserDefaults.
+    func loadSavedDoubleTaps() {
+        if let r = UserDefaults.standard.string(forKey: "recordDoubleTap"),
+           let m = DoubleTapModifier(rawValue: r) { recordDoubleTap = m }
+        if let r = UserDefaults.standard.string(forKey: "liveDoubleTap"),
+           let m = DoubleTapModifier(rawValue: r) { liveDoubleTap = m }
+        if let r = UserDefaults.standard.string(forKey: "speakDoubleTap"),
+           let m = DoubleTapModifier(rawValue: r) { speakDoubleTap = m }
+        refreshFnMonitorForDoubleTap()
+    }
+
+    /// True when any lane watches the 🌐/Fn double-tap.
+    private var anyFnDoubleTap: Bool {
+        recordDoubleTap == .fn || liveDoubleTap == .fn || speakDoubleTap == .fn
+    }
+
+    /// True when any lane watches a ⌃/⌘/⌥ double-tap (the CGEvent-tap path).
+    private var anyTapModifierDoubleTap: Bool {
+        func isTapModifier(_ m: DoubleTapModifier) -> Bool {
+            m == .control || m == .command || m == .option
+        }
+        return isTapModifier(recordDoubleTap)
+            || isTapModifier(liveDoubleTap)
+            || isTapModifier(speakDoubleTap)
+    }
+
+    /// Fn double-tap needs the NSEvent monitor even when no lane uses the
+    /// Globe key as a chord — start it on demand.
+    private func refreshFnMonitorForDoubleTap() {
+        if anyFnDoubleTap && fnKeyMonitor == nil { startFnKeyMonitor() }
+    }
+
+    /// Reset all in-flight tap tracking (used when a real keypress proves a
+    /// held modifier was part of a chord).
+    private func invalidateDoubleTapTracking() {
+        tapCandidate = nil
+        tapCandidateValid = false
+        lastTapFlag = nil
+    }
+
+    /// CGEvent-tap detection for ⌃ / ⌘ / ⌥ double-taps. Observational only —
+    /// never consumes the event, so the modifiers keep working normally. Fn is
+    /// handled in `handleFnKeyEvent` (the CGEvent tap doesn't see it reliably).
+    private func detectModifierDoubleTap(_ flags: CGEventFlags) {
+        guard anyTapModifierDoubleTap else { return }
+
+        let present = CGEventFlags(rawValue: flags.rawValue & HotkeyManager.doubleTapModifierMask.rawValue)
+        let prev = presenceMods
+        presenceMods = present
+
+        if present.isEmpty {
+            if let cand = tapCandidate, tapCandidateValid { completeTap(cand) }
+            tapCandidate = nil
+            tapCandidateValid = false
+        } else if present.trackedModifierCount == 1 {
+            // Arm only a fresh, single, offered modifier coming from nothing.
+            if prev.isEmpty && (present == .maskControl || present == .maskCommand || present == .maskAlternate) {
+                tapCandidate = present
+                tapCandidateValid = true
+            } else if tapCandidate == present && tapCandidateValid {
+                // unchanged single-modifier hold — keep the candidate
+            } else {
+                tapCandidate = nil
+                tapCandidateValid = false
+            }
+        } else {
+            // 2+ modifiers held → chord, not a tap.
+            tapCandidate = nil
+            tapCandidateValid = false
+            lastTapFlag = nil
+        }
+    }
+
+    /// Record a clean modifier tap; if it completes a matching pair inside the
+    /// window, fire the gesture.
+    private func completeTap(_ flag: CGEventFlags) {
+        let now = CFAbsoluteTimeGetCurrent()
+        if lastTapFlag == flag && (now - lastTapTime) <= doubleTapWindow {
+            lastTapFlag = nil
+            fireDoubleTap(flag)
+        } else {
+            lastTapFlag = flag
+            lastTapTime = now
+        }
+    }
+
+    /// Route a detected double-tap to whichever lane watches that modifier.
+    /// Record > Live > Speak precedence if two lanes share a gesture.
+    private func fireDoubleTap(_ flag: CGEventFlags) {
+        if recordDoubleTap.flag == flag {
+            hotkeyLogger.info("Double-tap → record toggle")
+            toggleRecordViaDoubleTap()
+        } else if liveDoubleTap.flag == flag {
+            hotkeyLogger.info("Double-tap → live toggle")
+            DispatchQueue.main.async { [weak self] in self?.onLiveKeyDown?() }
+        } else if speakDoubleTap.flag == flag {
+            hotkeyLogger.info("Double-tap → speak")
+            DispatchQueue.main.async { [weak self] in self?.onSpeakKeyDown?() }
+        }
+    }
+
+    /// The hold lane is press-and-hold, so a double-tap toggles it: the first
+    /// double-tap starts recording, the next stops and transcribes (matching
+    /// macOS Dictation's tap-tap-to-start / tap-tap-to-stop feel).
+    private func toggleRecordViaDoubleTap() {
+        if recordDoubleTapActive {
+            recordDoubleTapActive = false
+            DispatchQueue.main.async { [weak self] in self?.onKeyUp?() }
+        } else {
+            recordDoubleTapActive = true
+            DispatchQueue.main.async { [weak self] in self?.onKeyDown?() }
+        }
+    }
+
+    // MARK: - Media-key (NX_SYSDEFINED) playback controls
+
+    /// While TTS is active, the keyboard Play/Pause transport key toggles
+    /// pause/resume and is consumed (so it doesn't also toggle Music/Spotify).
+    /// When TTS isn't active, the key passes straight through to the system.
+    private func handleMediaKey(_ event: CGEvent) -> Bool {
+        guard ttsPlaybackActive else { return false }
+        guard let ns = NSEvent(cgEvent: event), ns.subtype.rawValue == 8 else { return false }
+
+        let keyCode = Int((ns.data1 & 0xFFFF0000) >> 16)
+        let keyState = (ns.data1 & 0x0000FF00) >> 8
+        let isPress = (keyState == 0x0A)
+
+        // NX_KEYTYPE_PLAY == 16. Only intercept Play/Pause; volume and other
+        // media keys pass through untouched.
+        guard keyCode == 16 else { return false }
+
+        if isPress {
+            hotkeyLogger.info("Media Play/Pause → TTS toggle")
+            DispatchQueue.main.async { [weak self] in self?.onTogglePlayPauseTTS?() }
+        }
+        return true   // consume press and release so the key stays ours while active
     }
 
     /// Get human-readable shortcut string for the hold hotkey.

@@ -741,6 +741,20 @@ final class TranscriptionCoordinator: ObservableObject {
         appState.readAlongText = ""
     }
 
+    /// Toggle TTS playback: pause if speaking, resume if paused. Wired to the
+    /// keyboard Play/Pause media key. No-op outside `.speaking` / `.paused`.
+    func togglePlayPauseSpeak() async {
+        guard let appState else { return }
+        switch appState.speakState {
+        case .speaking:
+            await pauseSpeak()
+        case .paused:
+            await resumeSpeak()
+        default:
+            break
+        }
+    }
+
     // MARK: - v1.2.0 Audio Export
 
     /// Synthesize `source` (without playing) and write the audio to

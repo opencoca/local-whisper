@@ -410,6 +410,32 @@ struct ShortcutSettingsView: View {
     @State private var currentLiveShortcut = HotkeyManager.shared.liveShortcutString
     @State private var isRecordingSpeak = false
     @State private var currentSpeakShortcut = HotkeyManager.shared.speakShortcutString
+    @State private var recordDoubleTap = HotkeyManager.shared.recordDoubleTap
+    @State private var liveDoubleTap = HotkeyManager.shared.liveDoubleTap
+    @State private var speakDoubleTap = HotkeyManager.shared.speakDoubleTap
+
+    /// One labelled row of the double-tap section: a lane title plus a menu
+    /// picker that writes straight through to HotkeyManager.
+    @ViewBuilder
+    private func doubleTapRow(_ title: String,
+                             selection: Binding<DoubleTapModifier>,
+                             apply: @escaping (DoubleTapModifier) -> Void) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Picker("", selection: selection) {
+                ForEach(DoubleTapModifier.allCases) { mod in
+                    Text(mod.label).tag(mod)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(width: 120)
+            .onChange(of: selection.wrappedValue) { _, newValue in
+                apply(newValue)
+            }
+        }
+    }
 
     var body: some View {
         ScrollView {
@@ -541,7 +567,30 @@ struct ShortcutSettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                
+
+                // Double-tap a modifier (dictation-style). Additive to the
+                // shortcuts above: tap a modifier twice (within ~0.3 s) to fire
+                // a lane, like macOS Dictation's "Press ⌃ twice." ⌃/⌘/⌥ are seen
+                // on the event tap; 🌐 (Fn) via the NSEvent monitor.
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Double-Tap a Modifier (Dictation-Style)")
+                        .font(.headline)
+
+                    doubleTapRow("Transcribe (starts / stops recording)",
+                                 selection: $recordDoubleTap) { HotkeyManager.shared.setRecordDoubleTap($0) }
+                    doubleTapRow("Live transcription",
+                                 selection: $liveDoubleTap) { HotkeyManager.shared.setLiveDoubleTap($0) }
+                    doubleTapRow("Speak selection",
+                                 selection: $speakDoubleTap) { HotkeyManager.shared.setSpeakDoubleTap($0) }
+
+                    Text("Tap a modifier key twice quickly to trigger a lane — like macOS Dictation's \"Press ⌃ twice.\" This is in addition to the key shortcuts above. For Transcribe, the first double-tap starts recording and the next stops and transcribes. Pick a gesture macOS isn't already using (e.g. avoid your system Dictation shortcut), and don't pair 🌐🌐 with the Globe-key preset above.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(12)
+
                 // Output method — applies to hold mode and the autoPaste
                 // live mode (per-char vs paste). Notepad mode keeps text
                 // on-screen only, so no injection happens — disable the
