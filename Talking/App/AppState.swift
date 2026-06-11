@@ -172,7 +172,13 @@ final class AppState: ObservableObject {
 
     /// Current state of the speech-synthesis workflow. Mirrors
     /// `transcriptionState` for the speak lane.
-    @Published var speakState: SpeakState = .idle
+    @Published var speakState: SpeakState = .idle {
+        didSet {
+            // Gate the media-key / Esc TTS controls so they only act while
+            // playback is live (see HotkeyManager.ttsPlaybackActive).
+            HotkeyManager.shared.ttsPlaybackActive = speakState.isActive
+        }
+    }
 
     /// Full text the synthesizer is reading. Drives the read-along
     /// modal body when `speakState.isActive`.

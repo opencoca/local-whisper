@@ -463,6 +463,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyManager.loadSavedHotkey()
         hotkeyManager.loadSavedLiveHotkey()
         hotkeyManager.loadSavedSpeakHotkey()
+        hotkeyManager.loadSavedDoubleTaps()
 
         hotkeyManager.onKeyDown = {
             Task { @MainActor in
@@ -491,6 +492,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyManager.onSpeakKeyDown = {
             Task { @MainActor in
                 await AppState.shared.coordinator.handleSpeakHotkey()
+            }
+        }
+
+        // TTS playback controls: keyboard Play/Pause media key toggles
+        // pause/resume; Esc stops. Both only fire while TTS is active
+        // (HotkeyManager gates on ttsPlaybackActive, set from AppState).
+        hotkeyManager.onTogglePlayPauseTTS = {
+            Task { @MainActor in
+                await AppState.shared.coordinator.togglePlayPauseSpeak()
+            }
+        }
+        hotkeyManager.onStopTTS = {
+            Task { @MainActor in
+                await AppState.shared.coordinator.stopSpeak()
             }
         }
 

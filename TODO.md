@@ -174,6 +174,12 @@ heading by area (Services, UI, Coordinators, etc.).*
 
 ## Backlog
 
+- [ ] **Speaker diarization for meeting transcription** #transcribe #asr #ux
+  - The 90-min interview in Done proves long-form transcription works, but the output is one undifferentiated block. For meetings (the highest-value multi-speaker case), label who said what — Speaker 1 / Speaker 2… with timestamps — so the transcript is attributable instead of a wall of text.
+  - Came out of the VibeVoice evaluation ([docs/research/2026-06-09-vibevoice-evaluation.md](docs/research/2026-06-09-vibevoice-evaluation.md)). VibeVoice-ASR-7B does 60-min single-pass recognition with diarization + timestamps, but it's PyTorch/CUDA, research-only-licensed, and not shippable on-device — so it's a reference point for the capability, not the engine.
+  - Open question is the on-device path: WhisperKit has no native diarization. Investigate a separate speaker-embedding + clustering step over Whisper segments — e.g. a CoreML/ONNX speaker-embedding model (sherpa-onnx-style) with timestamp-aligned clustering — that runs locally and stays inside the 100%-offline promise. Spike feasibility before committing to UI.
+  - Fits the file-transcribe and live lanes both; meeting recordings are the obvious entry point. Supersedes the passing "speaker diarization" mention in the v1.2.0 In Progress card's out-of-scope list — this is its real home.
+
 - [ ] **`/usr/bin/say` read-along precision (v1.2.x)** #tts #ux
   - v1.2.1 bounded drift per paragraph via ParagraphPlayer's true-duration interpolator, but within a single paragraph the highlight still uses word-uniformity. Long words and prosody pauses still throw it off subtly.
   - User-validated calibration on Alexander's machine (2026-06-03): *Audio start delay* ≈ 1.00 s (way higher than the 0.18 s default), *Speed correction* ≈ 1.17× (close to the 1.15 default). Beginning of an utterance is off; mid-stream settles in. System-dependent — don't change global defaults, but consider promoting "calibrate-your-machine" guidance up.
