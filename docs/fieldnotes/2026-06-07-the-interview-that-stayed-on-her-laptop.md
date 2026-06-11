@@ -2,7 +2,7 @@
 
 *Sage.is Talking turns your voice into text and your text back into voice, on a Mac, without sending a word to anyone. Here is a night when that was the whole point.*
 
-> Nadia is a stand-in. What the app does here is real in Sage.is Talking. The file transcription and read-aloud ship in 1.2.2. The double-tap dictation trigger and the playback keys are newer, built and heading into the next release. The person is made up. The software is real.
+> Nadia is a stand-in. What the app does here is real in Sage.is Talking. The file transcription and read-aloud ship in 1.2.2; the double-tap dictation trigger and the playback keys ship in 1.2.3. The person is made up. The software is real.
 
 It is a little after eleven and Nadia is at her kitchen table with her coat still on. She flew back this afternoon from two days of reporting, and the recorder on the table holds ninety-two minutes of a conversation she promised would stay between her and the person who agreed to talk. That promise is the problem. The fast way to turn audio into text is to upload it to a website, wait, and copy the result. She is not going to do that with this file. Whoever runs that website would have the recording, and so would whoever they answer to.
 
@@ -40,4 +40,4 @@ For now the shape is simple enough to explain in one breath. Hold a key and talk
 
 ---
 
-*Real today (v1.2.2): two-way voice, audio and video file transcription, the read-along window, audio export in both directions, custom vocabulary, fully offline. Built and heading into the next release: double-tap-a-modifier triggers (including ⌃⌃ as a drop-in for Apple's dictation shortcut) and Play/Pause + Escape playback controls. In progress on `feature/kokoro`: the Kokoro voice engine. Planned: a notarized download, an iPhone app, voice cloning, type-instead-of-paste output. Known rough edge today: pausing a system voice can jitter the read-along highlight. Roadmap lives in [TODO.md](../../TODO.md); shipped history in [CHANGELOG.md](../../CHANGELOG.md).*
+*Real today (through v1.2.2): two-way voice, audio and video file transcription, the read-along window, audio export in both directions, custom vocabulary, fully offline. New in v1.2.3: double-tap-a-modifier triggers (including ⌃⌃ as a drop-in for Apple's dictation shortcut) and Play/Pause + Escape playback controls. In progress on `feature/kokoro`: the Kokoro voice engine. Planned: a notarized download, an iPhone app, voice cloning, type-instead-of-paste output. Known rough edge today: pausing a system voice can jitter the read-along highlight. Roadmap lives in [TODO.md](../../TODO.md); shipped history in [CHANGELOG.md](../../CHANGELOG.md).*

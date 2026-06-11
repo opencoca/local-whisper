@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+## [1.2.3] — 2026-06-11
+
+### Added
+
+- **Double-tap-a-modifier dictation triggers.** Tap a modifier key twice quickly (⌃⌃, ⌘⌘, ⌥⌥, or 🌐🌐) to fire any of the three lanes — Transcribe, Live, or Speak — the way macOS Dictation answers to "Press Control twice." Point Transcribe at ⌃⌃ and it becomes a drop-in replacement for Apple's dictation that runs Whisper locally instead. ⌃/⌘/⌥ are detected on the existing CGEvent tap; 🌐 (Fn) via the parallel NSEvent monitor. Transcribe uses toggle semantics (one tap starts recording, the next stops and transcribes) since a tap can't be held. Per-lane, persisted, configurable in Settings → Shortcuts.
+- **TTS playback controls.** While the read-along is speaking, the keyboard Play/Pause media key toggles pause/resume and Esc stops. Both are gated on playback state, so they pass through untouched when nothing is playing.
+
+### Changed
+
+### Fixed
+
+### Removed
+
 ## [1.2.2] — 2026-06-04
 
 ### Added
@@ -141,7 +154,8 @@ Initial publicly tagged release.
 - `isModelLoaded` state correctly reflects model-load completion.
 - CI app-launch step that hung the macOS runner.
 
-[Unreleased]: https://github.com/opencoca/local-whisper/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/opencoca/local-whisper/compare/v1.2.3...HEAD
+[1.2.3]: https://github.com/opencoca/local-whisper/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/opencoca/local-whisper/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/opencoca/local-whisper/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/opencoca/local-whisper/compare/v1.1.0...v1.2.0
