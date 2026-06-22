@@ -25,6 +25,14 @@ Everything runs on your Mac. Nothing leaves it.
 
 ### With Homebrew (recommended)
 
+Don't have Homebrew yet? Install it first (full instructions at [brew.sh](https://brew.sh)):
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+Then install Sage.is Talking:
+
 ```bash
 brew install --cask sage-is/apps/talking
 ```
@@ -97,7 +105,7 @@ Custom vocabulary lives in Settings → Custom Vocabulary. The model treats it a
 You're early — thank you for that! 🙏 Sage.is Talking is actively evolving, and your feedback shapes where it goes next.
 
 - **Have a Sage.is account?** Reach us through [sage.is/support](https://sage.is/support/) — we'll see it fast.
-- **No account?** [Open an issue](https://github.com/opencoca/local-whisper/issues/new) on GitHub. Bugs, feature ideas, rough edges — all welcome.
+- **No account?** [Open an issue](https://github.com/opencoca/local-**whisper**/issues/new) on GitHub. Bugs, feature ideas, rough edges — all welcome.
 
 ## Privacy
 
