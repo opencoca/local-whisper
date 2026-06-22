@@ -52,6 +52,12 @@ actor SpeakService {
     private var currentEngine: SpeechEngine?
     private var activeContinuation: CheckedContinuation<Void, Error>?
 
+    /// v1.3 Kokoro backend. AppState injects the shared instance so
+    /// `KokoroService.stateStream` reaches `@Published kokoroDownloadState`
+    /// on the UI side. Optional so the legacy `SpeakService()` ctor still
+    /// works for tests / one-offs that don't need Kokoro.
+    private let kokoroService: KokoroService?
+
     /// Monotonically-increasing utterance id. The delegate closes over
     /// the id it was installed with and tags every stream yield, so the
     /// coordinator can drop yields from a preempted utterance whose
@@ -73,7 +79,7 @@ actor SpeakService {
     private let paragraphContinuation: AsyncStream<(UInt64, Int, Int)>.Continuation
     nonisolated let paragraphStream: AsyncStream<(UInt64, Int, Int)>
 
-    init() {
+    init(kokoroService: KokoroService? = nil) {
         var pc: AsyncStream<(UInt64, Double)>.Continuation!
         self.progressStream = AsyncStream { pc = $0 }
         self.progressContinuation = pc
@@ -85,6 +91,8 @@ actor SpeakService {
         var qc: AsyncStream<(UInt64, Int, Int)>.Continuation!
         self.paragraphStream = AsyncStream { qc = $0 }
         self.paragraphContinuation = qc
+
+        self.kokoroService = kokoroService
     }
 
     /// Returns the installed system voices from the AV catalog only.
@@ -142,7 +150,21 @@ actor SpeakService {
                 isPersonalVoice: false
             )
         }
-        return avInfos + nsInfos
+        // v1.3 Kokoro voices are surfaced at .premium quality. The
+        // catalog is static (single curated entry for v1.3 — see
+        // `KokoroService.curatedVoices`); we don't need the actor to
+        // be loaded to list them.
+        let kokoroInfos: [SpeakVoiceInfo] = KokoroService.curatedVoices.map { v in
+            SpeakVoiceInfo(
+                engine: .kokoro,
+                identifier: v.id,
+                name: "\(v.displayName) (\(v.gender == "Female" ? "\u{2640}" : "\u{2642}"))",
+                language: v.accent,
+                quality: .premium,
+                isPersonalVoice: false
+            )
+        }
+        return avInfos + nsInfos + kokoroInfos
     }
 
     /// Start playback. Returns when the synthesizer reports `didFinish`
@@ -178,23 +200,46 @@ actor SpeakService {
         sayColdStartLag: TimeInterval = 0.18,
         saySpeedFactor: Double = 1.15
     ) async throws {
+        let (engine, id) = Self.decodeVoiceID(voiceID)
+
+        // Engine prefix wins. `useSayCommand` is the AV/NS power-user
+        // override — it routes voices that *belong* to the Apple TTS
+        // daemon through the `say` CLI. Future engines (Kokoro,
+        // Chatterbox) have their own audio pipeline and must not be
+        // hijacked by the toggle. The exhaustive switch below forces
+        // every new engine case to declare whether it honours
+        // `useSayCommand` or runs through its native path.
         if useSayCommand {
-            let (_, id) = Self.decodeVoiceID(voiceID)
-            try await speakViaSayCommand(
+            switch engine {
+            case .avSpeechSynthesizer, .nsSpeechSynthesizer:
+                try await speakViaSayCommand(
+                    text: text,
+                    voiceID: id,
+                    rate: rate,
+                    coldStartLag: sayColdStartLag,
+                    speedFactor: saySpeedFactor
+                )
+                return
+            case .kokoro:
+                // Kokoro owns its own audio pipeline — the say toggle
+                // is a no-op for it. Fall through to the native path.
+                break
+            }
+        }
+
+        switch engine {
+        case .avSpeechSynthesizer:
+            try await speakViaAV(text: text, voiceID: id, rate: rate, pitch: pitch)
+        case .nsSpeechSynthesizer:
+            try await speakViaNS(text: text, voiceID: id, rate: rate)
+        case .kokoro:
+            try await speakViaKokoro(
                 text: text,
                 voiceID: id,
                 rate: rate,
                 coldStartLag: sayColdStartLag,
                 speedFactor: saySpeedFactor
             )
-            return
-        }
-        let (engine, id) = Self.decodeVoiceID(voiceID)
-        switch engine {
-        case .avSpeechSynthesizer:
-            try await speakViaAV(text: text, voiceID: id, rate: rate, pitch: pitch)
-        case .nsSpeechSynthesizer:
-            try await speakViaNS(text: text, voiceID: id, rate: rate)
         }
     }
 
@@ -434,6 +479,75 @@ actor SpeakService {
         }
     }
 
+    /// v1.3 Kokoro lane. Routes through `ParagraphPlayer` with a
+    /// `KokoroRenderEngine` so the read-along + paragraph progress
+    /// machinery is shared with the chunked-say path. Kokoro
+    /// pre-renders each paragraph to a 24 kHz mono WAV on disk;
+    /// `AVAudioPlayer.duration` then drives word-uniformity
+    /// interpolation. `coldStartLag` / `speedFactor` are honoured so
+    /// the user's calibration sliders apply to Kokoro too.
+    private func speakViaKokoro(
+        text: String,
+        voiceID: String?,
+        rate: Float,
+        coldStartLag: TimeInterval,
+        speedFactor: Double
+    ) async throws {
+        guard let kokoroService else {
+            throw SpeakError.kokoroUnavailable
+        }
+        preemptInFlight()
+
+        nextUtteranceID &+= 1
+        let myID = nextUtteranceID
+
+        let paragraphs = TextSplitter.paragraphs(from: text)
+        let chunks = paragraphs.isEmpty ? [text] : paragraphs
+
+        let player = ParagraphPlayer(
+            engine: KokoroRenderEngine(service: kokoroService),
+            progressContinuation: progressContinuation,
+            rangeContinuation: rangeContinuation,
+            paragraphContinuation: paragraphContinuation
+        )
+        paragraphPlayer = player
+        currentEngine = nil  // Sentinel — paragraphPlayer owns this utterance.
+
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            activeContinuation = cont
+            paragraphPlayerTask = Task { [weak self] in
+                do {
+                    try await player.start(
+                        paragraphs: chunks,
+                        voiceID: voiceID,
+                        rate: rate,
+                        utteranceID: myID,
+                        fullText: text
+                    )
+                    await self?.paragraphPlayerDidFinish(success: true, error: nil)
+                } catch {
+                    await self?.paragraphPlayerDidFinish(success: false, error: error)
+                }
+            }
+        }
+        _ = coldStartLag
+        _ = speedFactor
+    }
+
+    /// Offline-render path for Save Speech As… on Kokoro voices.
+    /// Synthesizes the full text in one pass and loads the resulting
+    /// WAV through the same AVAudioFile pipeline that the say / NS
+    /// render paths use, so `AudioExporter` sees identical input
+    /// regardless of engine.
+    private func renderViaKokoro(text: String, voiceID: String?, rate: Float) async throws -> AudioData {
+        guard let kokoroService else {
+            throw SpeakError.kokoroUnavailable
+        }
+        let rendered = try await kokoroService.synthesize(text: text, voiceID: voiceID, rate: rate)
+        defer { try? FileManager.default.removeItem(at: rendered.audioFileURL) }
+        return try loadAudioData(fromAIFFAt: rendered.audioFileURL)
+    }
+
     fileprivate func paragraphPlayerDidFinish(success: Bool, error: Error?) {
         paragraphPlayer = nil
         paragraphPlayerTask = nil
@@ -611,6 +725,12 @@ actor SpeakService {
             synthesizer?.pauseSpeaking(at: .word)
         case .nsSpeechSynthesizer:
             nsSynth?.pauseSpeaking(at: .wordBoundary)
+        case .kokoro:
+            // Unreachable — the Kokoro lane always sets `currentEngine
+            // = nil` so the `paragraphPlayer` early-return catches it
+            // before we reach this switch. Listed here so adding a new
+            // engine doesn't bypass the exhaustiveness check.
+            break
         case .none:
             break
         }
@@ -638,6 +758,10 @@ actor SpeakService {
             _ = synthesizer?.continueSpeaking()
         case .nsSpeechSynthesizer:
             nsSynth?.continueSpeaking()
+        case .kokoro:
+            // Unreachable — see pause() comment. The paragraphPlayer
+            // path resumes above before we reach here.
+            break
         case .none:
             break
         }
@@ -701,16 +825,30 @@ actor SpeakService {
     /// `voiceID` (`"av:"` / `"ns:"`), or by `useSayCommand` for the
     /// power-user backend.
     func renderToAudioData(text: String, voiceID: String?, rate: Float, pitch: Float, useSayCommand: Bool = false) async throws -> AudioData {
-        if useSayCommand {
-            let (_, id) = Self.decodeVoiceID(voiceID)
-            return try await renderViaSayCommand(text: text, voiceID: id, rate: rate)
-        }
         let (engine, id) = Self.decodeVoiceID(voiceID)
+
+        // Engine prefix wins — same poka-yoke shape as `speak()`. The
+        // useSayCommand override is meaningful only for the AV/NS lanes
+        // (engines that share the `say` daemon under the hood). New
+        // engines must opt in here explicitly.
+        if useSayCommand {
+            switch engine {
+            case .avSpeechSynthesizer, .nsSpeechSynthesizer:
+                return try await renderViaSayCommand(text: text, voiceID: id, rate: rate)
+            case .kokoro:
+                // Kokoro owns its own audio pipeline; the say toggle
+                // is a no-op for it. Fall through to the native path.
+                break
+            }
+        }
+
         switch engine {
         case .avSpeechSynthesizer:
             return try await renderViaAV(text: text, voiceID: id, rate: rate, pitch: pitch)
         case .nsSpeechSynthesizer:
             return try await renderViaNS(text: text, voiceID: id, rate: rate)
+        case .kokoro:
+            return try await renderViaKokoro(text: text, voiceID: id, rate: rate)
         }
     }
 
@@ -1051,6 +1189,7 @@ actor SpeakService {
 enum SpeakError: LocalizedError {
     case bufferTypeMismatch
     case voiceUnavailable(String)
+    case kokoroUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -1058,6 +1197,8 @@ enum SpeakError: LocalizedError {
             return "Speech synthesizer returned an unexpected buffer type during offline render"
         case .voiceUnavailable(let id):
             return "Voice '\(id)' is not installed on this Mac"
+        case .kokoroUnavailable:
+            return "Kokoro service is not configured. This is a build-time wiring bug; please report it."
         }
     }
 }

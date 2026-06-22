@@ -1,6 +1,14 @@
 {
   "pins" : [
     {
+      "identity" : "fluidaudio",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Sage-is/FluidAudio.git",
+      "state" : {
+        "revision" : "692388ace89eedcf6c8abef4419602685ac6ddf2"
+      }
+    },
+    {
       "identity" : "swift-argument-parser",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-argument-parser.git",

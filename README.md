@@ -24,7 +24,21 @@ Everything runs on your Mac. Nothing leaves it.
 
 ## Install
 
-### From DMG (recommended)
+### With Homebrew (recommended)
+
+```bash
+brew install --cask sage-is/apps/talking
+```
+
+The first install taps [`sage-is/apps`](https://github.com/Sage-is/homebrew-apps) automatically. To upgrade later:
+
+```bash
+brew upgrade --cask talking
+```
+
+Then open **Sage.is Talking** and grant **Microphone**, **Accessibility**, and **Input Monitoring** permissions.
+
+### From DMG
 
 1. Download the latest `.dmg` from [Releases](https://github.com/opencoca/local-whisper/releases/latest)
 2. Drag **Sage.is Talking** to Applications
@@ -78,6 +92,13 @@ Custom vocabulary lives in Settings → Custom Vocabulary. The model treats it a
 
 - [Model Guide](docs/models.md) — comparison, benchmarks, recommendations
 - [Architecture](docs/architecture.md) — structure and development guide
+
+## Early adopters & feedback
+
+You're early — thank you for that! 🙏 Sage.is Talking is actively evolving, and your feedback shapes where it goes next.
+
+- **Have a Sage.is account?** Reach us through [sage.is/support](https://sage.is/support/) — we'll see it fast.
+- **No account?** [Open an issue](https://github.com/opencoca/local-whisper/issues/new) on GitHub. Bugs, feature ideas, rough edges — all welcome.
 
 ## Privacy
 

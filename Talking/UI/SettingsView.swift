@@ -1826,13 +1826,32 @@ struct VoiceSettingsView: View {
                 if a.quality != b.quality { return a.quality < b.quality }
                 return a.name < b.name
             }
-        return [
+
+        // Poka-yoke: drive the per-engine groups off `SpeechEngine.allCases`
+        // with an exhaustive switch. Adding a new `SpeechEngine` case will
+        // fail to compile here until the picker is taught how to surface
+        // it. This is the device that would have caught the v1.3 Kokoro
+        // bug where the service shipped but never appeared in the UI.
+        var groups: [InfoGroup] = [
             InfoGroup(label: "Personal Voice (your cloned voice)", tier: .personal, voices: personal),
-            InfoGroup(label: "Premium (Siri-quality, neural)", tier: .premium, voices: avFilter(.premium)),
-            InfoGroup(label: "Enhanced (neural)", tier: .enhanced, voices: avFilter(.enhanced)),
-            InfoGroup(label: "Default (compact)", tier: .default, voices: avFilter(.default)),
-            InfoGroup(label: "Extra voices via say (regional + novelty)", tier: .sayOnly, voices: nsAll),
-        ].filter { !$0.voices.isEmpty }
+        ]
+        for engine in SpeechEngine.allCases {
+            switch engine {
+            case .avSpeechSynthesizer:
+                groups.append(contentsOf: [
+                    InfoGroup(label: "Premium (Siri-quality, neural)", tier: .premium, voices: avFilter(.premium)),
+                    InfoGroup(label: "Enhanced (neural)", tier: .enhanced, voices: avFilter(.enhanced)),
+                    InfoGroup(label: "Default (compact)", tier: .default, voices: avFilter(.default)),
+                ])
+            case .nsSpeechSynthesizer:
+                groups.append(InfoGroup(label: "Extra voices via say (regional + novelty)", tier: .sayOnly, voices: nsAll))
+            case .kokoro:
+                let kokoroVoices = rest.filter { $0.engine == .kokoro }
+                    .sorted { $0.name < $1.name }
+                groups.append(InfoGroup(label: "Kokoro (CoreML \u{2014} downloads on first use)", tier: .kokoro, voices: kokoroVoices))
+            }
+        }
+        return groups.filter { !$0.voices.isEmpty }
     }
 
     private struct InfoGroup {
@@ -1840,7 +1859,7 @@ struct VoiceSettingsView: View {
         let tier: Tier
         let voices: [SpeakVoiceInfo]
 
-        enum Tier { case personal, premium, enhanced, `default`, sayOnly }
+        enum Tier { case personal, premium, enhanced, `default`, sayOnly, kokoro }
     }
 
     // MARK: - Voice actions

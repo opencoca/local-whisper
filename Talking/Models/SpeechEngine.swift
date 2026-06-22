@@ -18,11 +18,17 @@ import Foundation
 enum SpeechEngine: String, CaseIterable, Codable {
     case avSpeechSynthesizer = "av"
     case nsSpeechSynthesizer = "ns"
+    /// v1.3 — Kokoro 82M CoreML via FluidAudio. Lazy-downloads its
+    /// model bundle on first synth. Plays through `ParagraphPlayer`
+    /// with `KokoroRenderEngine`. Does NOT honour the `useSayCommand`
+    /// toggle — it owns its own audio pipeline.
+    case kokoro = "kokoro"
 
     var displayName: String {
         switch self {
         case .avSpeechSynthesizer: return "AVSpeechSynthesizer"
         case .nsSpeechSynthesizer: return "NSSpeechSynthesizer"
+        case .kokoro: return "Kokoro (CoreML)"
         }
     }
 }

@@ -63,3 +63,18 @@ struct SayRenderEngine: ParagraphRenderEngine {
         )
     }
 }
+
+/// v1.3 — `ParagraphRenderEngine` conformer that delegates to
+/// `KokoroService.synthesize`. The service already handles
+/// sentence-level chunking + silence gaps inside each paragraph
+/// and writes a temp WAV; this adapter is just plumbing so the
+/// `ParagraphPlayer` machinery (pre-render, AVAudioPlayer playback,
+/// highlight interpolation, pause/resume, stop) is shared with the
+/// chunked-say lane.
+struct KokoroRenderEngine: ParagraphRenderEngine {
+    let service: KokoroService
+
+    func render(paragraph: String, voiceID: String?, rate: Float) async throws -> RenderedParagraph {
+        try await service.synthesize(text: paragraph, voiceID: voiceID, rate: rate)
+    }
+}
