@@ -593,8 +593,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleTalkingURL(_ url: URL) {
-        // Accept both talking://live and talking://live/ forms.
-        let action = (url.host ?? url.path).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        // Accept both talking://live and talking://live/ forms, and be
+        // case-insensitive (URL hosts conventionally are) so a hand-typed or
+        // tool-generated talking://LIVE still resolves.
+        let action = (url.host ?? url.path)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            .lowercased()
         log("[AppDelegate] talking:// action=\(action)")
         Task { @MainActor in
             let coordinator = AppState.shared.coordinator

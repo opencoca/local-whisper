@@ -32,7 +32,16 @@ for entry in "${TRIGGERS[@]}"; do
   url="${entry##*|}"
   app="$OUT_DIR/$name.app"
   rm -rf "$app"
-  osacompile -o "$app" -e "open location \"$url\""
+  # `open -g` (background) delivers the URL to Talking WITHOUT activating it,
+  # so the app you were working in (VS Code, a chat, …) stays frontmost. That
+  # matters: Talking reads the current selection / captures the paste target
+  # from whatever is frontmost, so the trigger must NOT steal focus. (A plain
+  # `open location` foregrounds the handler and breaks paste-back.)
+  osacompile -o "$app" -e "do shell script \"open -g $url\""
+  # Make the launcher itself a background agent so even launching it doesn't
+  # flash to the foreground and momentarily steal focus.
+  /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$app/Contents/Info.plist" >/dev/null 2>&1 \
+    || /usr/libexec/PlistBuddy -c "Set :LSUIElement true" "$app/Contents/Info.plist" >/dev/null 2>&1
   echo "  • $name.app  →  $url"
 done
 

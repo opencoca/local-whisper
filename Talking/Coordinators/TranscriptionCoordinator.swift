@@ -36,6 +36,14 @@ final class TranscriptionCoordinator: ObservableObject {
     /// before pasting on stop. Cleared after paste completes.
     private var liveTargetApp: NSRunningApplication?
 
+    /// In-flight latch for `stopLive`. `isLiveActive` stays true until
+    /// `resetLiveState()` at the very end, and `stopLive` has several await
+    /// suspension points (target activate, paste, pre-Return sleep) during
+    /// which a second trigger (double-tap, hotkey, URL) could re-enter on the
+    /// reentrant main actor and cause a double paste / double send. Set
+    /// synchronously before the first await; cleared in a `defer`.
+    private var isStoppingLive = false
+
     func configure(
         appState: AppState,
         audioService: AudioCaptureService,
@@ -521,6 +529,17 @@ final class TranscriptionCoordinator: ObservableObject {
             return
         }
 
+        // Idempotency + reentrancy. Single source of truth for "is a stop in
+        // progress" so every caller (handleLiveHotkey / stopLiveAndReturn /
+        // talking:// URLs) is serialized here rather than relying on each
+        // call site's own isLiveActive pre-check.
+        guard appState.isLiveActive, !isStoppingLive else {
+            logger.info("stopLive ignored — not active or already stopping")
+            return
+        }
+        isStoppingLive = true
+        defer { isStoppingLive = false }
+
         _ = await liveTranscriptionService.stop()
 
         appState.transcriptionState = .transcribing
@@ -570,11 +589,18 @@ final class TranscriptionCoordinator: ObservableObject {
         // clipboard or target app. Notepad is purely on-screen.
         switch effectiveMode {
         case .autoPaste:
-            await pasteLiveTranscriptToTarget(visibleTranscript)
-            if shouldReturn && !visibleTranscript.isEmpty {
-                // Small gap so the Cmd+V paste settles in the target before we
-                // submit, otherwise some apps send an empty/partial message.
-                try? await Task.sleep(nanoseconds: 80_000_000)
+            let didInject = await pasteLiveTranscriptToTarget(visibleTranscript)
+            // Press Return only when text was actually injected into the
+            // focused field. The clipboard-only fallback (no captured target)
+            // returns false — pressing Return there would fire a bare keystroke
+            // into a stray frontmost app with nothing pasted.
+            if shouldReturn && didInject {
+                // Only the Cmd+V paste path needs a settle gap before submit;
+                // typeText already awaited its full per-char loop, so the text
+                // has landed by the time we get here.
+                if appState.outputMethod == .paste {
+                    try? await Task.sleep(nanoseconds: 80_000_000)
+                }
                 await textInjectionService.pressReturn()
             }
         case .clipboardOnly:
@@ -607,25 +633,39 @@ final class TranscriptionCoordinator: ObservableObject {
     /// The auto-paste dispatch shared by `stopLive`'s `.autoPaste` mode and the
     /// stop&return flow: close the popover, refocus the captured target app,
     /// then paste (or type) the transcript into it.
-    private func pasteLiveTranscriptToTarget(_ visibleTranscript: String) async {
+    ///
+    /// - Returns: `true` when the transcript was actually injected into the
+    ///   focused field (typed, or pasted into a captured target). `false` when
+    ///   it only reached the clipboard (the no-target paste fallback) or there
+    ///   was nothing to deliver — callers use this to decide whether a
+    ///   follow-up Return keystroke is safe to send.
+    @discardableResult
+    private func pasteLiveTranscriptToTarget(_ visibleTranscript: String) async -> Bool {
         guard let appState = appState,
-              let textInjectionService = textInjectionService else { return }
+              let textInjectionService = textInjectionService else { return false }
         // Close popover before refocusing target — leaving it open
         // would steal Cmd+V.
         NotificationCenter.default.post(name: .closeTalkingPopover, object: nil)
-        guard !visibleTranscript.isEmpty else { return }
+        guard !visibleTranscript.isEmpty else { return false }
         if let target = liveTargetApp {
             target.activate()
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
         switch appState.outputMethod {
         case .typeCharacters:
+            // Typed keystrokes land in the focused field (the activated target,
+            // or the frontmost app) — the same place a follow-up Return goes.
             await textInjectionService.typeText(visibleTranscript)
+            return true
         case .paste:
             if liveTargetApp != nil {
                 try? await textInjectionService.injectText(visibleTranscript)
+                return true
             } else {
+                // No captured target — only put it on the clipboard. Nothing is
+                // injected, so signal false: the caller must not press Return.
                 await textInjectionService.copyToClipboard(visibleTranscript)
+                return false
             }
         }
     }

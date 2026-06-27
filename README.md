@@ -106,7 +106,9 @@ Drive Talking from a Xencelabs Quick Keys pad, a Stream Deck, Raycast, Shortcuts
 | `talking://live-stop-return` | Stop live, paste into the focused field, **press Return** — dictate-and-send for chats |
 | `talking://speak` | Speak the current selection (or clipboard) |
 
-Try one from a terminal: `open talking://live`.
+Try one from a terminal: `open -g talking://live`.
+
+> **Use `open -g` (background open), not plain `open`.** A foreground open *activates* Talking and steals focus from the app you were in — which breaks the whole point: Talking reads your current selection and pastes back into wherever you were (VS Code, a chat, …). `-g` delivers the action without changing the frontmost app.
 
 **Xencelabs Quick Keys / Stream Deck:** these devices inject keystrokes at a level the global hotkey can't see, so point a button at a URL launcher instead of a keystroke. Generate one tiny launcher app per action:
 
@@ -114,7 +116,7 @@ Try one from a terminal: `open talking://live`.
 scripts/make-trigger-apps.sh
 ```
 
-This writes `Talking Live.app`, `Talking Stop & Return.app`, etc. into `~/Applications/Talking Triggers`. In Quick Keys, set a button's action to *Open Application* and pick one. (Compiled AppleScript apps launch in milliseconds with no window — faster than a Shortcuts shortcut.)
+This writes `Talking Live.app`, `Talking Stop & Return.app`, etc. into `~/Applications/Talking Triggers`. In Quick Keys, set a button's action to *Open Application* and pick one. The launchers are background agents that fire the action via `open -g`, so **they never steal focus** — you stay in your editor/chat and the transcript pastes back where you were.
 
 **Live stop & return** also works without a URL: assign a dedicated hotkey (or a double-tap gesture) under **Settings → Shortcuts**, or turn on **Settings → Live Mode → "Press Return after paste on stop"** to make every auto-paste stop send.
 
