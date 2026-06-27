@@ -463,6 +463,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyManager.loadSavedHotkey()
         hotkeyManager.loadSavedLiveHotkey()
         hotkeyManager.loadSavedSpeakHotkey()
+        hotkeyManager.loadSavedLiveStopReturnHotkey()
         hotkeyManager.loadSavedDoubleTaps()
 
         hotkeyManager.onKeyDown = {
@@ -492,6 +493,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyManager.onSpeakKeyDown = {
             Task { @MainActor in
                 await AppState.shared.coordinator.handleSpeakHotkey()
+            }
+        }
+
+        // Live "stop & return" — stop live, paste, press Return (send). For
+        // dictating quickly into chats. No-ops when live isn't active. Off by
+        // default until the user assigns a shortcut or double-tap.
+        hotkeyManager.onLiveStopReturn = {
+            Task { @MainActor in
+                await AppState.shared.coordinator.stopLiveAndReturn()
             }
         }
 
@@ -566,6 +576,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         hotkeyManager.stop()
+    }
+
+    // MARK: - URL scheme (talking://)
+    //
+    // Lets any automation tool — Xencelabs Quick Keys, Stream Deck, Raycast,
+    // Shortcuts, a shell `open` — drive the lanes without relying on keystroke
+    // capture (the CGEvent tap can't see keystrokes a device driver injects at
+    // the session level). Routes to the SAME coordinator entry points as the
+    // hotkeys, so a URL behaves exactly like a key press. Registered via
+    // CFBundleURLTypes in the packaged Info.plist (scripts/release.sh).
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.scheme == "talking" {
+            handleTalkingURL(url)
+        }
+    }
+
+    private func handleTalkingURL(_ url: URL) {
+        // Accept both talking://live and talking://live/ forms.
+        let action = (url.host ?? url.path).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        log("[AppDelegate] talking:// action=\(action)")
+        Task { @MainActor in
+            let coordinator = AppState.shared.coordinator
+            switch action {
+            case "live":
+                // Idempotent start — a button press shouldn't toggle off.
+                if !AppState.shared.isLiveActive { await coordinator.handleLiveHotkey() }
+            case "live-stop":
+                if AppState.shared.isLiveActive { await coordinator.stopLive() }
+            case "live-stop-return":
+                await coordinator.stopLiveAndReturn()
+            case "speak":
+                await coordinator.handleSpeakHotkey()
+            default:
+                self.log("[AppDelegate] Unknown talking:// action: \(action)")
+            }
+        }
     }
 }
 

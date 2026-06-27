@@ -20,6 +20,13 @@ This file tracks active work for the Sage.is Talking menu bar app.
 
 ## In Progress
 
+- [ ] **`talking://` URL scheme + Live stop & return** #hotkeys #ux #automation
+  - Drive Live / Speak from programmable devices (Xencelabs Quick Keys, Stream Deck) and automation. Xencelabs keystrokes inject at the session level, below the app's HID-level CGEvent tap, so a URL scheme sidesteps keystroke capture entirely. Plan: `~/.claude/plans/so-we-would-love-inherited-mccarthy.md`.
+  - **URLs**: `talking://live`, `talking://live-stop`, `talking://live-stop-return`, `talking://speak`. Registered via `CFBundleURLTypes` in [scripts/release.sh](scripts/release.sh); handled in `application(_:open:)` ([Talking/App/AppDelegate.swift](Talking/App/AppDelegate.swift)) → same coordinator entry points as the hotkeys.
+  - **Live stop & return** (dictate-into-chat): stop live → paste into focused field → press Return. `TextInjectionService.pressReturn()` + `TranscriptionCoordinator.stopLiveAndReturn()`. Triggerable via URL, a dedicated hotkey, a double-tap gesture, or the "auto-send on stop" Live-mode toggle (off by default).
+  - **Launchers**: [scripts/make-trigger-apps.sh](scripts/make-trigger-apps.sh) emits one compiled-AppleScript `.app` per URL for Quick Keys' *Open Application* action (fastest-acting bridge).
+  - Out of scope (see Backlog): local HTTP/IP control surface.
+
 - [ ] **Sage.is Talking 1.2.0 — Two-Way Voice + Rebrand** #release #brand #tts #ux
   - Plan at `~/.claude/plans/we-need-to-get-smooth-anchor.md`. Reshapes LocalWhisper from one-way (mic → transcript) into two-way (mic → transcript AND text → speech), rebrands to **Sage.is Talking**, and adds drag-to-transcribe file flow + audio save in both directions + read-along modal — all in one release so users hit one TCC re-grant moment instead of two.
   - **Rebrand canonicals**: app display *Sage.is Talking* / short *Talking*; bundle id proposed `is.sage.talking`; source dir `LocalWhisper/` → `Talking/`; log paths `~/Library/Logs/Talking.log`, `/tmp/talking_keys.log`, `/tmp/talking_fn.log`; dev signing identity `Talking Dev` (legacy `LocalWhisper Dev` left intact for back-compat).
@@ -173,6 +180,10 @@ that don't yet have a corresponding card here will be grouped under this
 heading by area (Services, UI, Coordinators, etc.).*
 
 ## Backlog
+
+- [ ] **Local HTTP control surface (mirror `talking://` over IP)** #automation #future
+  - Expose the same actions (`/live`, `/live/stop`, `/live/stop-return`, `/speak`) over a tiny HTTP listener so lightweight UIs / dashboards can be hacked together against a running Talking instance. Natural extension of the `talking://` URL scheme (In Progress).
+  - **Security (non-negotiable):** bind `127.0.0.1` only (never `0.0.0.0`), opt-in toggle in Settings (off by default), and an optional shared-secret header/token. Document the threat model — any local process could otherwise drive the mic/paste lane.
 
 - [ ] **Speaker diarization for meeting transcription** #transcribe #asr #ux
   - The 90-min interview in Done proves long-form transcription works, but the output is one undifferentiated block. For meetings (the highest-value multi-speaker case), label who said what — Speaker 1 / Speaker 2… with timestamps — so the transcript is attributable instead of a wall of text.

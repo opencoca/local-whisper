@@ -101,11 +101,19 @@ final class HotkeyManager {
     private(set) var speakKeyCode: UInt16 = UInt16(kVK_Space)
     private(set) var speakModifiers: CGEventFlags = [.maskControl, .maskAlternate, .maskShift]
 
+    // Live "stop & return" hotkey — stops live transcription, pastes the
+    // transcript into the focused field, then presses Return (send). For
+    // dictating quickly into chats. Off by default (nil keyCode) until the
+    // user assigns one in Settings → Shortcuts. v1.2.x.
+    private(set) var liveStopReturnKeyCode: UInt16?
+    private(set) var liveStopReturnModifiers: CGEventFlags = []
+
     // Double-tap-a-modifier triggers (dictation-style), per lane. Off by
     // default; opt in to ⌃⌃ / ⌘⌘ / ⌥⌥ / 🌐🌐 independently. v1.2.x.
     private(set) var recordDoubleTap: DoubleTapModifier = .off
     private(set) var liveDoubleTap: DoubleTapModifier = .off
     private(set) var speakDoubleTap: DoubleTapModifier = .off
+    private(set) var liveStopReturnDoubleTap: DoubleTapModifier = .off
 
     fileprivate var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -116,6 +124,7 @@ final class HotkeyManager {
     var onKeyUp: (() -> Void)?
     var onLiveKeyDown: (() -> Void)?
     var onSpeakKeyDown: (() -> Void)?
+    var onLiveStopReturn: (() -> Void)?
 
     // TTS playback controls — the keyboard Play/Pause media key and Esc, gated
     // to only act while TTS is active (otherwise they pass through). v1.2.x.
@@ -131,6 +140,7 @@ final class HotkeyManager {
     private var isKeyDown = false
     private var liveIsKeyDown = false
     private var speakIsKeyDown = false
+    private var liveStopReturnIsKeyDown = false
 
     // Double-tap-a-modifier gesture state. ⌃/⌘/⌥ taps arrive on the CGEvent
     // tap; 🌐/Fn through the NSEvent monitor. A clean lone-modifier press+release
@@ -391,6 +401,22 @@ final class HotkeyManager {
                 return true
             }
 
+            // Live "stop & return" — single press; stops live, pastes, sends.
+            // Optional shortcut (nil until assigned). Coordinator no-ops when
+            // live isn't active. Same latch shape as live/speak.
+            if let srk = liveStopReturnKeyCode,
+               currentKeyCode == srk,
+               checkModifiers(currentFlags, against: liveStopReturnModifiers) {
+                if !liveStopReturnIsKeyDown {
+                    hotkeyLogger.info("Live stop&return hotkey DOWN detected!")
+                    liveStopReturnIsKeyDown = true
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onLiveStopReturn?()
+                    }
+                }
+                return true
+            }
+
             // Hold hotkey — fires on press, recording starts; autorepeat keyDowns
             // are coalesced via the `!isKeyDown` guard.
             if currentKeyCode == keyCode && hasHoldModifiers {
@@ -424,6 +450,14 @@ final class HotkeyManager {
             if currentKeyCode == speakKeyCode && speakIsKeyDown {
                 hotkeyLogger.info("Speak hotkey UP detected (clearing state)")
                 speakIsKeyDown = false
+                return true
+            }
+
+            // Live stop&return — clear the latch so the next press is fresh;
+            // consume only if we tracked the down (same poka-yoke as live/speak).
+            if let srk = liveStopReturnKeyCode, currentKeyCode == srk, liveStopReturnIsKeyDown {
+                hotkeyLogger.info("Live stop&return hotkey UP detected (clearing state)")
+                liveStopReturnIsKeyDown = false
                 return true
             }
 
@@ -498,6 +532,11 @@ final class HotkeyManager {
             // Speak hotkey: same idea.
             if speakIsKeyDown && !hasSpeakModifiers {
                 speakIsKeyDown = false
+            }
+            // Live stop&return: same idea.
+            if liveStopReturnIsKeyDown,
+               !checkModifiers(currentFlags, against: liveStopReturnModifiers) {
+                liveStopReturnIsKeyDown = false
             }
 
         default:
@@ -605,6 +644,34 @@ final class HotkeyManager {
         }
     }
 
+    /// Assign the live "stop & return" hotkey (v1.2.x+).
+    func setLiveStopReturnHotkey(keyCode: UInt16, modifiers: CGEventFlags) {
+        self.liveStopReturnKeyCode = keyCode
+        self.liveStopReturnModifiers = modifiers
+        UserDefaults.standard.set(Int(keyCode), forKey: "liveStopReturnHotkeyKeyCode")
+        UserDefaults.standard.set(modifiers.rawValue, forKey: "liveStopReturnHotkeyModifiers")
+        hotkeyLogger.info("Live stop&return hotkey updated to: \(self.liveStopReturnShortcutString)")
+    }
+
+    /// Clear the live "stop & return" hotkey (it's optional — off by default).
+    func clearLiveStopReturnHotkey() {
+        liveStopReturnKeyCode = nil
+        liveStopReturnModifiers = []
+        UserDefaults.standard.removeObject(forKey: "liveStopReturnHotkeyKeyCode")
+        UserDefaults.standard.removeObject(forKey: "liveStopReturnHotkeyModifiers")
+        hotkeyLogger.info("Live stop&return hotkey cleared")
+    }
+
+    /// Load the saved live "stop & return" hotkey from UserDefaults.
+    func loadSavedLiveStopReturnHotkey() {
+        if let savedKeyCode = UserDefaults.standard.object(forKey: "liveStopReturnHotkeyKeyCode") as? Int {
+            liveStopReturnKeyCode = UInt16(savedKeyCode)
+        }
+        if let savedModifiers = UserDefaults.standard.object(forKey: "liveStopReturnHotkeyModifiers") as? UInt64 {
+            liveStopReturnModifiers = CGEventFlags(rawValue: savedModifiers)
+        }
+    }
+
     // MARK: - Double-tap-a-modifier gestures (dictation-style)
 
     func setRecordDoubleTap(_ mod: DoubleTapModifier) {
@@ -628,6 +695,13 @@ final class HotkeyManager {
         hotkeyLogger.info("Speak double-tap set to \(mod.rawValue)")
     }
 
+    func setLiveStopReturnDoubleTap(_ mod: DoubleTapModifier) {
+        liveStopReturnDoubleTap = mod
+        UserDefaults.standard.set(mod.rawValue, forKey: "liveStopReturnDoubleTap")
+        refreshFnMonitorForDoubleTap()
+        hotkeyLogger.info("Live stop&return double-tap set to \(mod.rawValue)")
+    }
+
     /// Load saved double-tap gestures from UserDefaults.
     func loadSavedDoubleTaps() {
         if let r = UserDefaults.standard.string(forKey: "recordDoubleTap"),
@@ -636,12 +710,15 @@ final class HotkeyManager {
            let m = DoubleTapModifier(rawValue: r) { liveDoubleTap = m }
         if let r = UserDefaults.standard.string(forKey: "speakDoubleTap"),
            let m = DoubleTapModifier(rawValue: r) { speakDoubleTap = m }
+        if let r = UserDefaults.standard.string(forKey: "liveStopReturnDoubleTap"),
+           let m = DoubleTapModifier(rawValue: r) { liveStopReturnDoubleTap = m }
         refreshFnMonitorForDoubleTap()
     }
 
     /// True when any lane watches the 🌐/Fn double-tap.
     private var anyFnDoubleTap: Bool {
         recordDoubleTap == .fn || liveDoubleTap == .fn || speakDoubleTap == .fn
+            || liveStopReturnDoubleTap == .fn
     }
 
     /// True when any lane watches a ⌃/⌘/⌥ double-tap (the CGEvent-tap path).
@@ -652,6 +729,7 @@ final class HotkeyManager {
         return isTapModifier(recordDoubleTap)
             || isTapModifier(liveDoubleTap)
             || isTapModifier(speakDoubleTap)
+            || isTapModifier(liveStopReturnDoubleTap)
     }
 
     /// Fn double-tap needs the NSEvent monitor even when no lane uses the
@@ -726,6 +804,9 @@ final class HotkeyManager {
         } else if speakDoubleTap.flag == flag {
             hotkeyLogger.info("Double-tap → speak")
             DispatchQueue.main.async { [weak self] in self?.onSpeakKeyDown?() }
+        } else if liveStopReturnDoubleTap.flag == flag {
+            hotkeyLogger.info("Double-tap → live stop & return")
+            DispatchQueue.main.async { [weak self] in self?.onLiveStopReturn?() }
         }
     }
 
@@ -774,6 +855,13 @@ final class HotkeyManager {
 
     /// Get human-readable shortcut string for the speak hotkey.
     var speakShortcutString: String { format(keyCode: speakKeyCode, modifiers: speakModifiers) }
+
+    /// Human-readable string for the optional live "stop & return" hotkey, or
+    /// "Not set" when unassigned.
+    var liveStopReturnShortcutString: String {
+        guard let kc = liveStopReturnKeyCode else { return "Not set" }
+        return format(keyCode: kc, modifiers: liveStopReturnModifiers)
+    }
 
     private func format(keyCode: UInt16, modifiers: CGEventFlags) -> String {
         var parts: [String] = []

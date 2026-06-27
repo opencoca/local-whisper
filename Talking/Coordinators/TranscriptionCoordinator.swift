@@ -502,8 +502,17 @@ final class TranscriptionCoordinator: ObservableObject {
     ///   - `.notepad`: no clipboard, no paste, popover stays open. Transcript
     ///     persists for review; the next Start continues with a `\n\n`
     ///     boundary. Mobile-style scratchpad on desktop.
-    func stopLive() async {
-        logger.info("stopLive called (mode: \(self.appState?.liveMode.rawValue ?? "<nil>"))")
+    /// Stop live transcription and, like a hotkey release, dispatch the
+    /// transcript per the configured Live mode.
+    ///
+    /// - Parameter thenReturn: when true, this is the "stop & return" flow —
+    ///   force the auto-paste path (paste into the focused field regardless of
+    ///   the configured mode, since the intent is always "send into the chat
+    ///   I'm focused on") and synthesize a Return keypress after the paste.
+    ///   The `liveAutoSendOnStop` setting produces the same Return on a normal
+    ///   auto-paste stop.
+    func stopLive(thenReturn: Bool = false) async {
+        logger.info("stopLive called (mode: \(self.appState?.liveMode.rawValue ?? "<nil>"), thenReturn: \(thenReturn))")
 
         guard let appState = appState,
               let liveTranscriptionService = liveTranscriptionService,
@@ -548,28 +557,25 @@ final class TranscriptionCoordinator: ObservableObject {
             appState.lastTranscription = visibleTranscript
         }
 
+        // "stop & return" forces the auto-paste path regardless of the
+        // configured mode — the whole point is to land the text in the focused
+        // chat and send it.
+        let effectiveMode: AppState.LiveMode = thenReturn ? .autoPaste : appState.liveMode
+        // Press Return after the paste when this is an explicit stop&return, or
+        // when the user opted every auto-paste stop into auto-send.
+        let shouldReturn = (thenReturn || appState.liveAutoSendOnStop)
+            && effectiveMode == .autoPaste
+
         // Mode dispatch — only autoPaste / clipboardOnly touch the
         // clipboard or target app. Notepad is purely on-screen.
-        switch appState.liveMode {
+        switch effectiveMode {
         case .autoPaste:
-            // Close popover before refocusing target — leaving it open
-            // would steal Cmd+V.
-            NotificationCenter.default.post(name: .closeTalkingPopover, object: nil)
-            if !visibleTranscript.isEmpty {
-                if let target = liveTargetApp {
-                    target.activate()
-                    try? await Task.sleep(nanoseconds: 100_000_000)
-                }
-                switch appState.outputMethod {
-                case .typeCharacters:
-                    await textInjectionService.typeText(visibleTranscript)
-                case .paste:
-                    if liveTargetApp != nil {
-                        try? await textInjectionService.injectText(visibleTranscript)
-                    } else {
-                        await textInjectionService.copyToClipboard(visibleTranscript)
-                    }
-                }
+            await pasteLiveTranscriptToTarget(visibleTranscript)
+            if shouldReturn && !visibleTranscript.isEmpty {
+                // Small gap so the Cmd+V paste settles in the target before we
+                // submit, otherwise some apps send an empty/partial message.
+                try? await Task.sleep(nanoseconds: 80_000_000)
+                await textInjectionService.pressReturn()
             }
         case .clipboardOnly:
             NotificationCenter.default.post(name: .closeTalkingPopover, object: nil)
@@ -584,6 +590,44 @@ final class TranscriptionCoordinator: ObservableObject {
         }
 
         await resetLiveState()
+    }
+
+    /// "Live stop & return" — stop live, paste the transcript into the focused
+    /// field, then press Return (send). For dictating quickly into chats.
+    /// No-op when live isn't active. Triggerable via the `talking://` URL, a
+    /// dedicated hotkey, or a double-tap gesture.
+    func stopLiveAndReturn() async {
+        guard appState?.isLiveActive == true else {
+            logger.info("stopLiveAndReturn ignored — live not active")
+            return
+        }
+        await stopLive(thenReturn: true)
+    }
+
+    /// The auto-paste dispatch shared by `stopLive`'s `.autoPaste` mode and the
+    /// stop&return flow: close the popover, refocus the captured target app,
+    /// then paste (or type) the transcript into it.
+    private func pasteLiveTranscriptToTarget(_ visibleTranscript: String) async {
+        guard let appState = appState,
+              let textInjectionService = textInjectionService else { return }
+        // Close popover before refocusing target — leaving it open
+        // would steal Cmd+V.
+        NotificationCenter.default.post(name: .closeTalkingPopover, object: nil)
+        guard !visibleTranscript.isEmpty else { return }
+        if let target = liveTargetApp {
+            target.activate()
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        switch appState.outputMethod {
+        case .typeCharacters:
+            await textInjectionService.typeText(visibleTranscript)
+        case .paste:
+            if liveTargetApp != nil {
+                try? await textInjectionService.injectText(visibleTranscript)
+            } else {
+                await textInjectionService.copyToClipboard(visibleTranscript)
+            }
+        }
     }
 
     /// Tear down session state. In notepad mode, preserve the displayed

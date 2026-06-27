@@ -95,6 +95,29 @@ Custom vocabulary lives in Settings → Custom Vocabulary. The model treats it a
 
 ![Sage.is Talking Settings](docs/images/settings.png)
 
+## Automation & external triggers
+
+Drive Talking from a Xencelabs Quick Keys pad, a Stream Deck, Raycast, Shortcuts, or a shell — anything that can open a URL. Talking registers the `talking://` scheme:
+
+| URL | What it does |
+| --- | --- |
+| `talking://live` | Start live transcription |
+| `talking://live-stop` | Stop live (honors your Live mode: paste / clipboard / notepad) |
+| `talking://live-stop-return` | Stop live, paste into the focused field, **press Return** — dictate-and-send for chats |
+| `talking://speak` | Speak the current selection (or clipboard) |
+
+Try one from a terminal: `open talking://live`.
+
+**Xencelabs Quick Keys / Stream Deck:** these devices inject keystrokes at a level the global hotkey can't see, so point a button at a URL launcher instead of a keystroke. Generate one tiny launcher app per action:
+
+```bash
+scripts/make-trigger-apps.sh
+```
+
+This writes `Talking Live.app`, `Talking Stop & Return.app`, etc. into `~/Applications/Talking Triggers`. In Quick Keys, set a button's action to *Open Application* and pick one. (Compiled AppleScript apps launch in milliseconds with no window — faster than a Shortcuts shortcut.)
+
+**Live stop & return** also works without a URL: assign a dedicated hotkey (or a double-tap gesture) under **Settings → Shortcuts**, or turn on **Settings → Live Mode → "Press Return after paste on stop"** to make every auto-paste stop send.
+
 ## Documentation
 
 - [Model Guide](docs/models.md) — comparison, benchmarks, recommendations

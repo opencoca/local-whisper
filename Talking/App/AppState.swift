@@ -93,6 +93,15 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(liveMode.rawValue, forKey: "liveMode") }
     }
 
+    /// When on, an auto-paste live Stop also presses Return (sends) after the
+    /// paste — turning "tap to stop" into "tap to send" for chat dictation.
+    /// Off by default; every auto-paste stop would otherwise submit. The
+    /// dedicated "stop & return" hotkey / `talking://live-stop-return` URL do
+    /// this on demand without flipping this global.
+    @Published var liveAutoSendOnStop: Bool {
+        didSet { UserDefaults.standard.set(liveAutoSendOnStop, forKey: "liveAutoSendOnStop") }
+    }
+
     /// How transcribed text reaches the focused app.
     /// - `.paste`: clipboard + synthesized `Cmd+V`. Fast but some apps
     ///   reject programmatic pastes (password fields, certain banking /
@@ -402,6 +411,8 @@ final class AppState: ObservableObject {
         } else {
             self.liveMode = .autoPaste
         }
+
+        self.liveAutoSendOnStop = UserDefaults.standard.bool(forKey: "liveAutoSendOnStop")
 
         // Default to .paste so existing users see no change in behavior.
         // .typeCharacters is opt-in for apps that block programmatic paste.

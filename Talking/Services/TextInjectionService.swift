@@ -71,6 +71,27 @@ actor TextInjectionService {
         injectionLogger.info("Typing complete (\(text.count) chars)")
     }
 
+    /// Synthesize a single Return keypress. Used by the "live stop & return"
+    /// flow to *send* a dictated message after the transcript is pasted — in a
+    /// chat app Return submits; in a plain editor it's just a newline (same
+    /// keystroke, the focused app decides). No modifier flags.
+    func pressReturn() {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let returnKey = CGKeyCode(kVK_Return)
+
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: returnKey, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: returnKey, keyDown: false) else {
+            injectionLogger.error("Failed to create Return key event")
+            return
+        }
+
+        keyDown.post(tap: .cghidEventTap)
+        usleep(5000) // 5ms delay between key down and up
+        keyUp.post(tap: .cghidEventTap)
+
+        injectionLogger.info("Return keystroke posted")
+    }
+
     /// Simulate Cmd+V keypress using CGEvent
     private func simulatePaste() {
         let source = CGEventSource(stateID: .combinedSessionState)

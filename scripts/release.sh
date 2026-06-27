@@ -87,6 +87,17 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
     <string>Copyright © 2026 Startr LLC. Licensed under AGPL-3.0. Based on LocalWhisper (MIT, 2024).</string>
     <key>RepoURL</key>
     <string>$REPO_URL</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>$BUNDLE_ID</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>talking</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>
 EOF

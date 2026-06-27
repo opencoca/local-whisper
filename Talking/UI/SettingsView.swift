@@ -410,9 +410,12 @@ struct ShortcutSettingsView: View {
     @State private var currentLiveShortcut = HotkeyManager.shared.liveShortcutString
     @State private var isRecordingSpeak = false
     @State private var currentSpeakShortcut = HotkeyManager.shared.speakShortcutString
+    @State private var isRecordingLiveStopReturn = false
+    @State private var currentLiveStopReturnShortcut = HotkeyManager.shared.liveStopReturnShortcutString
     @State private var recordDoubleTap = HotkeyManager.shared.recordDoubleTap
     @State private var liveDoubleTap = HotkeyManager.shared.liveDoubleTap
     @State private var speakDoubleTap = HotkeyManager.shared.speakDoubleTap
+    @State private var liveStopReturnDoubleTap = HotkeyManager.shared.liveStopReturnDoubleTap
 
     /// One labelled row of the double-tap section: a lane title plus a menu
     /// picker that writes straight through to HotkeyManager.
@@ -568,6 +571,48 @@ struct ShortcutSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                // Live stop & return (v1.2.x) — optional, off by default. Stops
+                // live, pastes into the focused field, then presses Return
+                // (send). Great for dictating quickly into chats.
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Live Stop & Return (Send)")
+                        .font(.headline)
+
+                    HStack(spacing: 16) {
+                        ShortcutRecorderView(
+                            isRecording: $isRecordingLiveStopReturn,
+                            currentShortcut: $currentLiveStopReturnShortcut,
+                            onSave: { keyCode, modifiers in
+                                HotkeyManager.shared.setLiveStopReturnHotkey(keyCode: keyCode, modifiers: modifiers)
+                            },
+                            readBack: { HotkeyManager.shared.liveStopReturnShortcutString }
+                        )
+
+                        Spacer()
+
+                        if !isRecordingLiveStopReturn {
+                            if HotkeyManager.shared.liveStopReturnKeyCode != nil {
+                                Button("Clear") {
+                                    HotkeyManager.shared.clearLiveStopReturnHotkey()
+                                    currentLiveStopReturnShortcut = HotkeyManager.shared.liveStopReturnShortcutString
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                            Button("Change") {
+                                isRecordingLiveStopReturn = true
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    .padding()
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(12)
+
+                    Text("While live transcription is running, this stops it, pastes the transcript into the focused field, and presses Return — sending it in chat apps. Optional and unset by default. No-op when live isn't active.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 // Double-tap a modifier (dictation-style). Additive to the
                 // shortcuts above: tap a modifier twice (within ~0.3 s) to fire
                 // a lane, like macOS Dictation's "Press ⌃ twice." ⌃/⌘/⌥ are seen
@@ -582,6 +627,8 @@ struct ShortcutSettingsView: View {
                                  selection: $liveDoubleTap) { HotkeyManager.shared.setLiveDoubleTap($0) }
                     doubleTapRow("Speak selection",
                                  selection: $speakDoubleTap) { HotkeyManager.shared.setSpeakDoubleTap($0) }
+                    doubleTapRow("Live stop & return (send)",
+                                 selection: $liveStopReturnDoubleTap) { HotkeyManager.shared.setLiveStopReturnDoubleTap($0) }
 
                     Text("Tap a modifier key twice quickly to trigger a lane — like macOS Dictation's \"Press ⌃ twice.\" This is in addition to the key shortcuts above. For Transcribe, the first double-tap starts recording and the next stops and transcribes. Pick a gesture macOS isn't already using (e.g. avoid your system Dictation shortcut), and don't pair 🌐🌐 with the Globe-key preset above.")
                         .font(.caption)
@@ -743,6 +790,19 @@ struct LiveModeSettingsView: View {
                     }())
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                    // Auto-send: in auto-paste mode, also press Return on stop.
+                    // Off by default — every stop would otherwise submit.
+                    Toggle("Press Return after paste on stop (auto-send)",
+                           isOn: $appState.liveAutoSendOnStop)
+                        .toggleStyle(.switch)
+                        .padding(.top, 8)
+                        .disabled(appState.liveMode != .autoPaste)
+                    Text(appState.liveMode != .autoPaste
+                         ? "Available in Auto-paste mode. Turns every live Stop into a send — good for dictating into chats."
+                         : "Every live Stop pastes and then presses Return (sends in chat apps). For one-off sends without flipping this, use the **Live Stop & Return** shortcut.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 .padding()
                 .background(Color(nsColor: .controlBackgroundColor))
