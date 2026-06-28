@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import PDFKit
 import ApplicationServices
+import Carbon.HIToolbox
 
 /// Resolves a `SpeakSource` into the literal text to speak. Five
 /// input shapes, one return type — so the coordinator never branches
@@ -19,7 +20,10 @@ actor TextSourceService {
     func resolve(_ source: SpeakSource) async throws -> String? {
         switch source {
         case .selection:
-            return readSelection()
+            // AX first (no clipboard side effects); fall back to a synthesized
+            // ⌘C for apps that don't expose kAXSelectedText (Electron/Chromium).
+            if let selected = readSelection() { return selected }
+            return await readSelectionViaCopy()
         case .clipboard:
             return readClipboard()
         case .typed(let text):
@@ -33,9 +37,19 @@ actor TextSourceService {
 
     /// Convenience: try `.selection` first, fall back to `.clipboard`.
     /// What the Speak hotkey actually does most of the time.
-    func resolveSelectionOrClipboard() -> String? {
+    ///
+    /// Selection is read two ways: the Accessibility API (fast, no side
+    /// effects, works for native Cocoa text views) and — when that comes up
+    /// empty — a synthesized ⌘C, which is the only thing that reads a selection
+    /// out of Electron/Chromium apps (VS Code, Slack, browsers) that don't
+    /// expose `kAXSelectedText`. Only if both find nothing do we read whatever
+    /// is already on the clipboard.
+    func resolveSelectionOrClipboard() async -> String? {
         if let selected = readSelection() {
             return selected
+        }
+        if let copied = await readSelectionViaCopy() {
+            return copied
         }
         return readClipboard()
     }
@@ -78,6 +92,73 @@ actor TextSourceService {
         else { return nil }
 
         return nonEmpty(text)
+    }
+
+    /// Fallback selection read for apps that don't expose `kAXSelectedText`
+    /// (Electron/Chromium — VS Code, Slack, Discord, browsers): synthesize ⌘C
+    /// against the frontmost app, read what landed on the clipboard, then put
+    /// the user's previous clipboard back. Requires the source app to be
+    /// frontmost (it receives the ⌘C — which is why Talking must not steal
+    /// focus) and the Accessibility permission we already hold. Borrows the
+    /// clipboard for a few tens of milliseconds.
+    private func readSelectionViaCopy() async -> String? {
+        let pasteboard = NSPasteboard.general
+        let saved = savePasteboard(pasteboard)
+        let beforeCount = pasteboard.changeCount
+
+        simulateCopy()
+
+        // Poll for the copy to land — the app bumps changeCount when it writes
+        // the selection. Break as soon as it does; give up after ~240ms (no
+        // selection → ⌘C is a no-op → changeCount never moves).
+        var copied: String?
+        for _ in 0..<12 {
+            try? await Task.sleep(nanoseconds: 20_000_000) // 20ms
+            if pasteboard.changeCount != beforeCount {
+                copied = pasteboard.string(forType: .string)
+                break
+            }
+        }
+
+        restorePasteboard(pasteboard, items: saved)
+        if let copied { return nonEmpty(copied) }
+        return nil
+    }
+
+    /// Post a synthetic ⌘C to the frontmost app.
+    private func simulateCopy() {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let cKey = CGKeyCode(kVK_ANSI_C)
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: cKey, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: cKey, keyDown: false) else {
+            return
+        }
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+    }
+
+    /// Snapshot the full pasteboard (all items + types) so rich content —
+    /// images, files, styled text — survives the ⌘C borrow, not just strings.
+    private func savePasteboard(_ pb: NSPasteboard) -> [NSPasteboardItem] {
+        pb.pasteboardItems?.compactMap { item in
+            let copy = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    copy.setData(data, forType: type)
+                }
+            }
+            return copy.types.isEmpty ? nil : copy
+        } ?? []
+    }
+
+    /// Restore a snapshot taken by `savePasteboard`.
+    private func restorePasteboard(_ pb: NSPasteboard, items: [NSPasteboardItem]) {
+        pb.clearContents()
+        if !items.isEmpty {
+            pb.writeObjects(items)
+        }
     }
 
     // MARK: - Clipboard

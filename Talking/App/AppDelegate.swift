@@ -384,8 +384,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func showLargeLiveWindow() {
         if let existing = largeLiveWindow {
             existing.level = appState.liveLargeWindowFloating ? .floating : .normal
-            existing.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            // Show WITHOUT activating Talking. As a menu-bar accessory, calling
+            // NSApp.activate() here would pull Talking to the foreground — which
+            // (a) makes external tools like Xencelabs Quick Keys see a frontmost
+            // app with no profile and switch to "no specific app", and (b) steals
+            // keyboard focus from the app you're dictating into, so the cursor
+            // never comes back on stop. orderFrontRegardless surfaces the window
+            // while leaving the user's app frontmost. (Tip: enable the floating
+            // toggle so the window stays visible above your editor.)
+            existing.orderFrontRegardless()
             return
         }
 
@@ -409,10 +416,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.isReleasedWhenClosed = false
         window.level = appState.liveLargeWindowFloating ? .floating : .normal
         window.center()
-        window.makeKeyAndOrderFront(nil)
-
         largeLiveWindow = window
-        NSApp.activate(ignoringOtherApps: true)
+        // Present without activating Talking — see the note on the reuse path
+        // above. Keeps focus in the user's app so dictation/paste-back works and
+        // external macro tools don't see a profile switch.
+        window.orderFrontRegardless()
     }
 
     /// Hide the large transcription window when live mode stops. We just
